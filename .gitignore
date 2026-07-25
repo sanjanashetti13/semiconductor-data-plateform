@@ -1,0 +1,84 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment & secrets
+.env
+.env.local
+*.pem
+*.key
+credentials.json
+secrets.yaml
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# Spark / Databricks local
+spark-warehouse/
+metastore_db/
+derby.log
+*.crc
+_SUCCESS
+
+# Data artifacts (keep folder structure; ignore large files)
+data/raw/**/*.csv
+data/raw/**/*.parquet
+data/raw/**/*.tsv
+data/raw/**/*.zip
+data/raw/**/*.gz
+data/processed/**
+!data/processed/README.md
+data/warehouse/**
+!data/warehouse/README.md
+!data/raw/**/README.md
+
+# Logs (keep directory)
+logs/*
+!logs/.gitkeep
+!logs/README.md
+
+# Models (keep directory)
+models/*
+!models/.gitkeep
+!models/README.md
+
+# AI generated outputs (keep structure)
+ai/generated/*
+!ai/generated/README.md
+
+# OS / temp
+*.tmp
+*.temp
+*.log
+*.bak

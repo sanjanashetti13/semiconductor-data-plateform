@@ -1,0 +1,100 @@
+-- =============================================================================
+-- Semiconductor Data Platform — Azure SQL Star Schema (placeholder)
+-- =============================================================================
+-- Phase 2 will implement the full 6-table star schema below.
+-- Tables are sketched with comments only; do not execute as-is in production
+-- until column types, keys, and indexes are finalized.
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- Dimension: dim_date
+-- Grain: one row per calendar date (and optionally shift / fiscal attributes)
+-- -----------------------------------------------------------------------------
+-- CREATE TABLE dbo.dim_date (
+--     date_key        INT           NOT NULL,  -- YYYYMMDD
+--     full_date       DATE          NOT NULL,
+--     year_num        SMALLINT      NOT NULL,
+--     quarter_num     TINYINT       NOT NULL,
+--     month_num       TINYINT       NOT NULL,
+--     week_num        TINYINT       NULL,
+--     day_of_week     TINYINT       NULL,
+--     is_weekend      BIT           NULL,
+--     CONSTRAINT PK_dim_date PRIMARY KEY (date_key)
+-- );
+
+-- -----------------------------------------------------------------------------
+-- Dimension: dim_equipment
+-- Grain: one row per tool / chamber / equipment unit
+-- -----------------------------------------------------------------------------
+-- CREATE TABLE dbo.dim_equipment (
+--     equipment_key   INT           NOT NULL,
+--     equipment_id    NVARCHAR(64)  NOT NULL,
+--     equipment_name  NVARCHAR(128) NULL,
+--     equipment_type  NVARCHAR(64)  NULL,
+--     fab_area        NVARCHAR(64)  NULL,
+--     vendor          NVARCHAR(64)  NULL,
+--     status          NVARCHAR(32)  NULL,
+--     CONSTRAINT PK_dim_equipment PRIMARY KEY (equipment_key)
+-- );
+
+-- -----------------------------------------------------------------------------
+-- Dimension: dim_process_step
+-- Grain: one row per manufacturing process step / recipe stage
+-- -----------------------------------------------------------------------------
+-- CREATE TABLE dbo.dim_process_step (
+--     process_step_key INT          NOT NULL,
+--     step_code        NVARCHAR(64) NOT NULL,
+--     step_name        NVARCHAR(128) NULL,
+--     process_area     NVARCHAR(64)  NULL,
+--     sequence_order   INT           NULL,
+--     CONSTRAINT PK_dim_process_step PRIMARY KEY (process_step_key)
+-- );
+
+-- -----------------------------------------------------------------------------
+-- Dimension: dim_sensor
+-- Grain: one row per sensor / feature channel
+-- -----------------------------------------------------------------------------
+-- CREATE TABLE dbo.dim_sensor (
+--     sensor_key      INT           NOT NULL,
+--     sensor_id       NVARCHAR(64)  NOT NULL,
+--     sensor_name     NVARCHAR(128) NULL,
+--     unit_of_measure NVARCHAR(32)  NULL,
+--     sensor_type     NVARCHAR(64)  NULL,
+--     is_active       BIT           NULL,
+--     CONSTRAINT PK_dim_sensor PRIMARY KEY (sensor_key)
+-- );
+
+-- -----------------------------------------------------------------------------
+-- Dimension: dim_wafer_lot
+-- Grain: one row per wafer lot (and optional wafer attributes)
+-- -----------------------------------------------------------------------------
+-- CREATE TABLE dbo.dim_wafer_lot (
+--     wafer_lot_key   INT           NOT NULL,
+--     lot_id          NVARCHAR(64)  NOT NULL,
+--     product_family  NVARCHAR(64)  NULL,
+--     technology_node NVARCHAR(32)  NULL,
+--     start_date_key  INT           NULL,
+--     CONSTRAINT PK_dim_wafer_lot PRIMARY KEY (wafer_lot_key)
+-- );
+
+-- -----------------------------------------------------------------------------
+-- Fact: fact_sensor_readings
+-- Grain: sensor measurement event (lot × step × equipment × sensor × time)
+-- -----------------------------------------------------------------------------
+-- CREATE TABLE dbo.fact_sensor_readings (
+--     reading_key         BIGINT         NOT NULL,
+--     date_key            INT            NOT NULL,
+--     equipment_key       INT            NOT NULL,
+--     process_step_key    INT            NOT NULL,
+--     sensor_key          INT            NOT NULL,
+--     wafer_lot_key       INT            NOT NULL,
+--     measured_value      FLOAT(53)      NULL,
+--     is_anomaly          BIT            NULL,
+--     quality_flag        NVARCHAR(16)   NULL,
+--     -- CONSTRAINT PK_fact_sensor_readings PRIMARY KEY (reading_key),
+--     -- FK constraints to dim_* tables will be added in Phase 2
+-- );
+
+-- =============================================================================
+-- End of placeholder schema
+-- =============================================================================

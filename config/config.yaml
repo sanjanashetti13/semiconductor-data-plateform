@@ -1,0 +1,76 @@
+# =============================================================================
+# Semiconductor Data Platform — Application Configuration
+# =============================================================================
+# Override sensitive values via environment variables / .env (see .env.example).
+
+project:
+  name: semiconductor-data-platform
+  version: "0.1.0"
+  environment: development  # development | staging | production
+
+paths:
+  raw: data/raw
+  processed: data/processed
+  warehouse: data/warehouse
+  logs: logs
+  models: models
+  prompts: ai/prompts
+  generated: ai/generated
+
+datasets:
+  secom:
+    raw_dir: data/raw/secom
+    description: SECOM semiconductor manufacturing sensor dataset
+  wafer_defect:
+    raw_dir: data/raw/wafer_defect
+    description: Wafer map / defect classification dataset
+
+spark:
+  app_name: semiconductor-etl
+  master: local[*]
+  shuffle_partitions: 8
+  parquet_compression: snappy
+
+azure_sql:
+  server: ${AZURE_SQL_SERVER}
+  database: semiconductor_dw
+  port: 1433
+  driver: ODBC Driver 18 for SQL Server
+  schema: dbo
+  # Star schema tables (Phase 2)
+  tables:
+    - dim_date
+    - dim_equipment
+    - dim_process_step
+    - dim_sensor
+    - dim_wafer_lot
+    - fact_sensor_readings
+
+etl:
+  batch_size: 10000
+  write_mode: overwrite  # overwrite | append
+  enable_validation: true
+  anomaly_zscore_threshold: 3.0
+
+ai:
+  provider: groq  # groq | openai
+  temperature: 0.1
+  max_tokens: 2048
+  modules:
+    etl_assistant: true
+    data_quality_monitor: true
+    documentation_generator: true
+    nl_sql_agent: true
+
+logging:
+  level: INFO
+  format: "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+  file: logs/pipeline.log
+
+power_bi:
+  workspace_name: Semiconductor Analytics
+  reports:
+    - Executive Dashboard
+    - Yield Analytics
+    - Equipment Health
+    - Data Quality
