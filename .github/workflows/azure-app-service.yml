@@ -202,9 +202,12 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    environment:
-      name: Production
-      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
+    # Do NOT use a GitHub Environment here.
+    # That would mint an OIDC subject like:
+    #   repo:...:environment:Production
+    # Azure Deployment Center federated credentials usually match the branch:
+    #   repo:<owner>/<repo>:ref:refs/heads/main
+    # Azure App Service slot "Production" is set via slot-name below (unrelated).
 
     steps:
       - name: Download artifact
