@@ -1,6 +1,19 @@
 export type MessageRole = "user" | "assistant";
 export type ConfidenceLevel = "High" | "Medium" | "Low";
 
+export interface VisualizationPoint {
+  label: string;
+  value: number;
+}
+
+export interface VisualizationSpec {
+  type: "bar" | "line";
+  title?: string;
+  xAxis?: string | null;
+  yAxis?: string | null;
+  data: VisualizationPoint[];
+}
+
 export interface ChatMessage {
   id: string;
   role: MessageRole;
@@ -15,6 +28,8 @@ export interface ChatMessage {
   confidence?: ConfidenceLevel;
   followUps?: string[];
   sql?: string | null;
+  sqlExecuted?: boolean;
+  visualization?: VisualizationSpec | null;
   category?: string | null;
   routerDecision?: string | null;
   validationResult?: string | null;

@@ -70,10 +70,33 @@ _REASONING_BLOCK = re.compile(
 )
 
 
+_SENSOR_COLUMN = re.compile(
+    r"\b(sensor[_\s]?\d+|sensor\s*\d+)\b",
+    re.I,
+)
+_SENSOR_ANALYTICS = re.compile(
+    r"\b("
+    r"average\s+values?\s+of\s+sensor|avg\s*\(\s*sensor|"
+    r"sensor[_\s]?\d+|highest\s+average|lowest\s+average|"
+    r"which\s+sensor|compare\s+sensors?"
+    r")\b",
+    re.I,
+)
+
+
+def is_sensor_analytics_question(question: str) -> bool:
+    """True when the ask is about sensor columns / averages — not manufacturing KPIs."""
+    q = question or ""
+    return bool(_SENSOR_COLUMN.search(q) or _SENSOR_ANALYTICS.search(q))
+
+
 def is_kpi_route(question: str) -> bool:
     """True when the question must use the KPI handler (no free-form LLM SQL)."""
     q = question or ""
     if _REASONING_BLOCK.search(q):
+        return False
+    # Sensor analytics must never be answered from vw_manufacturing_summary KPIs.
+    if is_sensor_analytics_question(q):
         return False
     return bool(_KPI_ROUTE.search(q))
 

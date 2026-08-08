@@ -43,8 +43,18 @@ SEMI_KPI_VIEW = "vw_manufacturing_summary"
 SEMI_SENSOR_FACT = "fact_sensor_readings"
 SEMI_TIME_DIM = "dim_time"
 
-# Keyword → canonical object (Semiconductor Mode)
+# Keyword → canonical object (Semiconductor Mode).
+# Sensor patterns are checked BEFORE KPI so "avg sensor_000 for passed wafers"
+# still routes to fact_sensor_readings (not vw_manufacturing_summary).
 _KEYWORD_OBJECT_MAP: list[tuple[re.Pattern[str], str]] = [
+    (
+        re.compile(
+            r"\b(sensor[_\s]?\d+|sensor|reading|sample\s+rows?|machine\s+learning|\bml\b|"
+            r"prediction|anomaly|root\s+cause|raw\s+sensor|average\s+values?\s+of\s+sensor)\b",
+            re.I,
+        ),
+        SEMI_SENSOR_FACT,
+    ),
     (
         re.compile(
             r"\b(passed|failed|yield|production|manufacturing\s+summary|"
@@ -52,14 +62,6 @@ _KEYWORD_OBJECT_MAP: list[tuple[re.Pattern[str], str]] = [
             re.I,
         ),
         SEMI_KPI_VIEW,
-    ),
-    (
-        re.compile(
-            r"\b(sensor|reading|sample\s+rows?|machine\s+learning|\bml\b|"
-            r"prediction|anomaly|root\s+cause|raw\s+sensor)\b",
-            re.I,
-        ),
-        SEMI_SENSOR_FACT,
     ),
     (
         re.compile(
@@ -72,8 +74,8 @@ _KEYWORD_OBJECT_MAP: list[tuple[re.Pattern[str], str]] = [
 ]
 
 _SENSOR_HINT = re.compile(
-    r"\b(sensor|reading_id|compare\s+sensor|root\s+cause|"
-    r"machine\s+learning|\bml\b|anomaly|prediction)\b",
+    r"\b(sensor[_\s]?\d+|sensor|reading_id|compare\s+sensor|root\s+cause|"
+    r"machine\s+learning|\bml\b|anomaly|prediction|average\s+values?\s+of\s+sensor)\b",
     re.I,
 )
 _TIME_HINT = re.compile(

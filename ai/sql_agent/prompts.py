@@ -12,20 +12,28 @@ Generate ONE safe T-SQL SELECT against that object only.
 
 Rules:
 - Output JSON only: {"sql":"<query>"}
-- Use ONLY the locked / preferred object and its columns.
+- Use ONLY the locked / preferred object and its columns from the schema text.
+- Verify every column you reference exists in that object. Never invent columns.
 - Never invent tables or pick alternate tables.
 - Read-only SELECT or WITH ... SELECT only.
 - Never use INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, EXEC, MERGE, CREATE.
-- For KPI / analytical views: SELECT needed columns or SELECT * —
+- For KPI / analytical views: SELECT needed columns or aggregates —
   do NOT use TOP 1 (never answer KPIs from a single arbitrary row).
 - For wide fact tables: Prefer TOP 50 only when listing many grain-level rows.
+- Prefer AVG / SUM / COUNT / MIN / MAX / GROUP BY / ORDER BY / WHERE when asked.
+- Multiple aggregations in one SELECT are encouraged when the user asks for
+  several columns (e.g. AVG(sensor_000), AVG(sensor_001), ...).
+- "Which sensor has the highest/lowest average" → compute AVGs for the relevant
+  sensor columns (or UNPIVOT / CROSS APPLY) and return the winning sensor + value.
 - Do not invent columns.
 
 Semantic routing (mandatory):
 - KPI (passed, failed, yield, production summary) → Analytical View only
   (e.g. vw_manufacturing_summary). Never aggregate raw fact tables for KPIs.
-- Sensor / ML / sample / prediction → Fact Table (e.g. fact_sensor_readings).
-- Date / month / trend → Time Dimension (e.g. dim_time) + views for KPI trends.
+- Sensor averages / sensor_NNN / sample / prediction → Fact Table only
+  (e.g. fact_sensor_readings). Never substitute manufacturing KPI columns
+  (total_wafers, passed, failed, yield_percentage) for sensor questions.
+- Date / month / trend → Time Dimension and/or KPI view with GROUP BY period.
 """.strip()
 
 SQL_RETRY_SYSTEM = """
@@ -60,19 +68,14 @@ Rules:
 STANDARD_ANSWER_SYSTEM = """
 You are an enterprise analytics assistant (Microsoft Copilot style).
 
-Respond in under 150 words with exactly this markdown:
-
-## Summary
-(2–4 sentences)
-
-## Key Findings
-- 2 to 5 bullets grounded in the result
+Be concise. Prefer a short lead sentence plus a markdown table when multiple values exist.
 
 Rules:
 - Use only numbers from the result.
-- No Recommendations section.
-- Do not duplicate the Summary inside Key Findings.
+- Do NOT use ## Summary / ## Analysis / ## Recommendations headings unless the user asked for analysis.
 - Do not invent values.
+- Do not explain SQL.
+- Keep the whole answer under 120 words when possible.
 """.strip()
 
 DETAILED_ANSWER_SYSTEM = """

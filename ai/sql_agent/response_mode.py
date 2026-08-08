@@ -37,7 +37,7 @@ _DIRECT_PATTERNS = re.compile(
     r"\b("
     r"how\s+many|what\s+is\s+the\s+overall\s+yield|count|total\s+wafers?|"
     r"passed|failed|pass\s+rate|fail\s+rate|row\s+counts?|"
-    r"number\s+of"
+    r"number\s+of|average|avg\b|highest|lowest|min\b|max\b|sensor[_\s]?\d+"
     r")\b",
     re.IGNORECASE,
 )

@@ -112,19 +112,34 @@ def format_analysis_answer(
     """
     Single user-facing answer — no duplicated Answer/Explanation blocks.
 
-    SQL stays on the API payload for Developer Mode only.
+    SQL stays on the API payload for the contextual "See SQL Query" control.
     """
     del sql
+    # Prefer a compact markdown table for multi-value factual results.
+    if (
+        not result.error
+        and result.columns
+        and result.rows
+        and mode in (ResponseMode.DIRECT, ResponseMode.STANDARD)
+        and (len(result.columns) >= 2 or len(result.rows) >= 2)
+        and not is_scalar_result(result)
+    ):
+        table = format_rows_markdown(result, max_rows=25)
+        lead = narrative.strip().split("\n")[0].strip() if narrative.strip() else ""
+        # Drop LLM section headings if present
+        if lead.startswith("#"):
+            lead = ""
+        if lead and len(lead) < 180 and "##" not in lead:
+            return f"{lead}\n\n{table}"
+        return table
+
     text = narrative.strip()
     if not text:
         text = "_No answer generated._"
 
     if mode == ResponseMode.DIRECT:
-        # One response only — never attach Result/Explanation duplicates.
         return text
 
-    # Standard / Detailed: LLM already structured; avoid appending raw tables
-    # that restate the same numbers.
     return text
 
 

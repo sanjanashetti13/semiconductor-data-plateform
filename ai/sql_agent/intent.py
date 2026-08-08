@@ -185,8 +185,12 @@ def is_reasoning_question(question: str) -> bool:
 
 
 def is_factual_kpi_question(question: str) -> bool:
-    """True only for numeric KPI asks, not yield/failure reasoning."""
+    """True only for numeric KPI asks, not yield/failure reasoning or sensor analytics."""
     if is_reasoning_question(question):
+        return False
+    from ai.sql_agent.kpi import is_sensor_analytics_question
+
+    if is_sensor_analytics_question(question or ""):
         return False
     return bool(_KPI_PATTERNS.search(question or ""))
 

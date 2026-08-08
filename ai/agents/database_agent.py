@@ -52,7 +52,7 @@ def _via_sql_agent(
         success=bool(answer),
         summary=answer or "No data returned.",
         data=result,
-        sql=sql,
+        sql=sql if result.get("sql_executed") else None,
         meta={
             "goal": goal,
             "category": result.get("category"),
@@ -63,6 +63,8 @@ def _via_sql_agent(
             "follow_ups": result.get("follow_ups", []),
             "tool": result.get("tool"),
             "tool_label": result.get("tool_label"),
+            "sql_executed": bool(result.get("sql_executed")),
+            "visualization": result.get("visualization"),
         },
     )
 

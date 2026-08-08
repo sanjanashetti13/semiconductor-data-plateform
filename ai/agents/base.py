@@ -53,6 +53,8 @@ class OrchestratorResponse:
 
     answer: str
     sql: str | None = None
+    sql_executed: bool = False
+    visualization: dict | None = None
     follow_ups: list[str] = field(default_factory=list)
     category: str | None = None
     row_count: int = 0

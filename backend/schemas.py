@@ -100,11 +100,30 @@ class SqlAgentChatRequest(BaseModel):
     history: list[HistoryMessage] = Field(default_factory=list)
 
 
+class VisualizationPoint(BaseModel):
+    """One point on a chart series (from executed query results only)."""
+
+    label: str
+    value: float
+
+
+class VisualizationSpec(BaseModel):
+    """Optional chart payload for the chat UI."""
+
+    type: Literal["bar", "line"] = "bar"
+    title: str = ""
+    xAxis: str | None = None
+    yAxis: str | None = None
+    data: list[VisualizationPoint] = Field(default_factory=list)
+
+
 class SqlAgentChatResponse(BaseModel):
     """SQL Agent answer with optional developer metadata."""
 
     answer: str
     sql: str | None = None
+    sql_executed: bool = False
+    visualization: VisualizationSpec | None = None
     tool: str = "sql_agent"
     tool_label: str = "Generic SQL Agent"
     data_source: str | None = None

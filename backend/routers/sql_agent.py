@@ -186,7 +186,9 @@ def sql_agent_chat(payload: SqlAgentChatRequest) -> SqlAgentChatResponse:
         )
         result = {
             "answer": orch.answer,
-            "sql": orch.sql,
+            "sql": orch.sql if orch.sql_executed else None,
+            "sql_executed": bool(orch.sql_executed and orch.sql),
+            "visualization": orch.visualization,
             "tool": orch.tool,
             "tool_label": orch.tool_label,
             "data_source": orch.data_source,
@@ -245,7 +247,9 @@ def sql_agent_chat(payload: SqlAgentChatRequest) -> SqlAgentChatResponse:
 
     return SqlAgentChatResponse(
         answer=answer,
-        sql=result.get("sql"),
+        sql=result.get("sql") if result.get("sql_executed") else None,
+        sql_executed=bool(result.get("sql_executed") and result.get("sql")),
+        visualization=_parse_visualization(result.get("visualization")),
         tool=result.get("tool", "sql_agent"),
         tool_label=result.get("tool_label", "Generic SQL Agent"),
         data_source=result.get("data_source"),
@@ -260,6 +264,17 @@ def sql_agent_chat(payload: SqlAgentChatRequest) -> SqlAgentChatResponse:
         planner_rationale=result.get("planner_rationale"),
         execution_graph=list(result.get("execution_graph") or []),
     )
+
+
+def _parse_visualization(value):
+    if not value or not isinstance(value, dict):
+        return None
+    try:
+        from backend.schemas import VisualizationSpec
+
+        return VisualizationSpec.model_validate(value)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _safe_dev_status(value: str | None) -> str | None:

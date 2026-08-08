@@ -101,6 +101,46 @@ def _safe_validation(text: str) -> str:
     return cleaned
 
 
+def _json_safe(value):
+    """Convert SQL cell values to JSON-friendly primitives."""
+    if value is None:
+        return None
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _kpi_visualization(question: str, totals) -> dict | None:
+    """Optional chart for multi-metric KPI asks (e.g. compare passed vs failed)."""
+    from ai.sql_agent.visualization import build_visualization, wants_visualization
+
+    if not wants_visualization(question, row_count=3, column_count=2):
+        # Still allow compare-style questions
+        q = (question or "").lower()
+        if not any(k in q for k in ("compare", "passed vs", "failed vs", "show", "chart")):
+            return None
+    data = []
+    if totals.passed is not None:
+        data.append({"label": "passed", "value": float(totals.passed)})
+    if totals.failed is not None:
+        data.append({"label": "failed", "value": float(totals.failed)})
+    if totals.total_wafers is not None and len(data) < 2:
+        data.append({"label": "total", "value": float(totals.total_wafers)})
+    if len(data) < 2:
+        return None
+    return {
+        "type": "bar",
+        "title": "Production totals",
+        "xAxis": "Metric",
+        "yAxis": "Count",
+        "data": data,
+    }
+    return cleaned
+
+
 def _extract_json(text: str) -> dict:
     text = text.strip()
     try:
@@ -126,15 +166,24 @@ def _base_response(
     config_database: str,
     category: QuestionCategory,
     sql: str | None = None,
+    sql_executed: bool = False,
     row_count: int = 0,
+    columns: list[str] | None = None,
+    rows: list | None = None,
+    visualization: dict | None = None,
     execution_time: float = 0.0,
     validation_result: str = "n/a",
     follow_ups: list[str] | None = None,
 ) -> dict:
+    # Only expose SQL when it actually ran successfully.
+    safe_sql = sql if sql_executed and sql else None
     return {
         "answer": answer,
-        "sql": sql,
-        "columns": [],
+        "sql": safe_sql,
+        "sql_executed": bool(sql_executed and safe_sql),
+        "columns": list(columns or []),
+        "rows": list(rows or []),
+        "visualization": visualization,
         "row_count": row_count,
         "data_source": f"Azure SQL · {config_database}",
         "tool": "sql_agent",
@@ -337,6 +386,7 @@ def _handle_metadata(session_id: str, config, plan: Plan, started: float) -> dic
             config_database=config.database,
             category=QuestionCategory.METADATA,
             sql=sql_used,
+            sql_executed=bool(sql_used),
             row_count=row_count,
             validation_result=f"schema profile · {intent.value}",
             execution_time=round(time.perf_counter() - started, 2),
@@ -647,13 +697,24 @@ def _run_sql_and_explain(
                 result=result,
                 mode=mode,
             )
+            from ai.sql_agent.visualization import build_visualization
+
+            viz = build_visualization(
+                plan.question,
+                list(result.columns),
+                list(result.rows),
+            )
             route_note = f" · route={routing_guidance[:80]}" if routing_guidance else ""
             return _base_response(
                 answer=answer,
                 config_database=config.database,
                 category=category,
                 sql=safe_sql,
+                sql_executed=True,
                 row_count=result.row_count,
+                columns=list(result.columns),
+                rows=[[_json_safe(c) for c in row] for row in result.rows[:50]],
+                visualization=viz,
                 validation_result=(
                     f"passed (SELECT-only) · response_mode={mode.value}{route_note}"
                 ),
@@ -697,7 +758,8 @@ def _run_sql_and_explain(
         answer=format_analysis_failure(last_error or "Unknown failure"),
         config_database=config.database,
         category=category,
-        sql=sql_attempt or None,
+        sql=None,
+        sql_executed=False,
         row_count=0,
         validation_result=f"failed: {last_error or 'unknown'}",
         execution_time=round(time.perf_counter() - started, 2),
@@ -727,7 +789,9 @@ def _handle_kpi(session_id: str, config, plan: Plan, schema: str, started: float
             config_database=config.database,
             category=QuestionCategory.KPI,
             sql=totals.sql,
+            sql_executed=bool(totals.sql),
             row_count=1,
+            visualization=_kpi_visualization(plan.question, totals),
             validation_result=(
                 f"kpi · {mode_note} · grain={grain_note} · "
                 f"source={totals.source} · validated={totals.validated}"

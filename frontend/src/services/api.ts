@@ -98,6 +98,14 @@ export interface SqlConnectResult {
 export interface SqlAgentResponse {
   answer: string;
   sql?: string | null;
+  sql_executed?: boolean;
+  visualization?: {
+    type: "bar" | "line";
+    title?: string;
+    xAxis?: string | null;
+    yAxis?: string | null;
+    data: { label: string; value: number }[];
+  } | null;
   tool: string;
   tool_label: string;
   data_source?: string | null;

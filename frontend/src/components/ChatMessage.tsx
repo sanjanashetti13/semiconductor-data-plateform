@@ -1,4 +1,5 @@
 import type { ChatMessage as ChatMessageType } from "@/types";
+import { ResultChart } from "@/components/ResultChart";
 import { Button } from "@/components/ui/button";
 import { toBusinessAnswer } from "@/lib/displayAnswer";
 import { cn } from "@/lib/utils";
@@ -35,7 +36,9 @@ export function ChatMessage({
   onFollowUp,
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
+  const [sqlCopied, setSqlCopied] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [sqlOpen, setSqlOpen] = useState(false);
   const isUser = message.role === "user";
   const followUps = message.error
     ? message.suggestions ?? []
@@ -46,6 +49,11 @@ export function ChatMessage({
     : developerMode
       ? message.content
       : toBusinessAnswer(message.content);
+
+  const showSqlButton =
+    !isUser &&
+    !message.error &&
+    Boolean(message.sqlExecuted && message.sql?.trim());
 
   const hasTechnicalDetails =
     !isUser &&
@@ -70,6 +78,17 @@ export function ChatMessage({
       await navigator.clipboard.writeText(displayContent);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1400);
+    } catch {
+      // ignore
+    }
+  }
+
+  async function handleCopySql() {
+    if (!message.sql) return;
+    try {
+      await navigator.clipboard.writeText(message.sql);
+      setSqlCopied(true);
+      window.setTimeout(() => setSqlCopied(false), 1400);
     } catch {
       // ignore
     }
@@ -109,6 +128,56 @@ export function ChatMessage({
                 {displayContent}
               </ReactMarkdown>
             </div>
+            {message.visualization &&
+              message.visualization.data &&
+              message.visualization.data.length >= 2 && (
+                <ResultChart visualization={message.visualization} />
+              )}
+          </div>
+        )}
+
+        {showSqlButton && (
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={() => setSqlOpen((open) => !open)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-cyan-500/30 bg-transparent px-3 py-1 text-[11px] text-zinc-400 transition hover:border-cyan-400/50 hover:text-zinc-200"
+              aria-expanded={sqlOpen}
+            >
+              <ChevronDown
+                className={cn(
+                  "h-3.5 w-3.5 transition",
+                  sqlOpen ? "rotate-180" : "rotate-0",
+                )}
+              />
+              See SQL Query
+            </button>
+            {sqlOpen && (
+              <div className="mt-2 rounded-xl border border-cyan-500/20 bg-[#020617]/80 p-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-zinc-500">
+                    SQL Query Executed
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1.5 px-2 text-zinc-400 hover:bg-white/5 hover:text-zinc-100"
+                    onClick={() => void handleCopySql()}
+                  >
+                    {sqlCopied ? (
+                      <Check className="h-3.5 w-3.5 text-emerald-400" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5" />
+                    )}
+                    {sqlCopied ? "Copied" : "Copy"}
+                  </Button>
+                </div>
+                <pre className="overflow-x-auto rounded-lg border border-cyan-500/15 bg-[#01040a] p-2.5 text-[11px] leading-relaxed text-sky-200">
+                  <code>{message.sql}</code>
+                </pre>
+              </div>
+            )}
           </div>
         )}
 
@@ -173,16 +242,6 @@ export function ChatMessage({
                 />
                 {message.dataSource && (
                   <DetailRow label="Data Source" value={message.dataSource} />
-                )}
-                {message.sql && (
-                  <div>
-                    <p className="mb-1 text-[11px] uppercase tracking-[0.12em] text-zinc-500">
-                      Generated SQL
-                    </p>
-                    <pre className="overflow-x-auto rounded-lg border border-cyan-500/20 bg-[#020617] p-2 text-[11px] text-sky-200">
-                      <code>{message.sql}</code>
-                    </pre>
-                  </div>
                 )}
               </div>
             )}

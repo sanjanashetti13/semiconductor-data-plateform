@@ -111,7 +111,7 @@ def run_orchestrator(
             result.error,
         )
 
-    answer, sql, follow_ups, category, row_count, data_source, validation, router = (
+    answer, sql, sql_executed, visualization, follow_ups, category, row_count, data_source, validation, router = (
         _merge(execution_plan, results, request, resolved)
     )
 
@@ -120,7 +120,7 @@ def run_orchestrator(
         session_id,
         question=cleaned,
         answer=answer,
-        sql=sql,
+        sql=sql if sql_executed else None,
         sql_result=next(
             (r.summary for r in results if r.agent == "database" and r.success),
             None,
@@ -148,7 +148,9 @@ def run_orchestrator(
 
     return OrchestratorResponse(
         answer=answer,
-        sql=sql,
+        sql=sql if sql_executed else None,
+        sql_executed=bool(sql_executed and sql),
+        visualization=visualization,
         follow_ups=follow_ups,
         category=category,
         row_count=row_count,
@@ -181,23 +183,17 @@ def _merge(
     results: list[AgentResult],
     request: OrchestratorRequest,
     resolved: str,
-) -> tuple[
-    str,
-    str | None,
-    list[str],
-    str | None,
-    int,
-    str | None,
-    str | None,
-    str | None,
-]:
+) -> tuple:
     ok = [r for r in results if r.success and not r.meta.get("skipped")]
+    empty = (None, False, None)  # sql, sql_executed, visualization
     if not ok:
         failed = results[-1].summary if results else "No agents produced an answer."
-        return failed, None, _default_follow_ups(), "error", 0, None, "failed", None
+        return (failed, *empty, _default_follow_ups(), "error", 0, None, "failed", None)
 
     by_agent = {r.agent: r for r in ok}
     sql = next((r.sql for r in ok if r.sql), None)
+    sql_executed = False
+    visualization = None
     follow_ups: list[str] = []
     category = None
     row_count = 0
@@ -213,31 +209,46 @@ def _merge(
         data_source = db.meta.get("data_source") or db.data.get("data_source")
         validation = db.meta.get("validation_result") or db.data.get("validation_result")
         router = db.meta.get("router_decision") or db.data.get("router_decision")
-        sql = sql or db.data.get("sql")
+        sql = sql or db.data.get("sql") or db.sql
+        sql_executed = bool(
+            db.meta.get("sql_executed")
+            if "sql_executed" in db.meta
+            else db.data.get("sql_executed")
+        )
+        if not sql_executed and sql and db.data.get("sql_executed") is not False:
+            # Legacy success path: SQL present from ask_sql_agent success
+            sql_executed = bool(db.data.get("sql_executed", bool(sql)))
+        visualization = db.meta.get("visualization") or db.data.get("visualization")
 
     for r in ok:
         data_source = data_source or r.meta.get("data_source")
 
-    # Single agent → direct answer (Mode 1 manufacturing tools need LLM polish)
+    def _pack(answer: str, sql_val: str | None = sql):
+        executed = bool(sql_executed and sql_val)
+        return (
+            answer,
+            sql_val if executed else None,
+            executed,
+            visualization if executed else visualization,
+            follow_ups or _default_follow_ups(),
+            category,
+            row_count,
+            data_source,
+            validation,
+            router,
+        )
+
     if len(ok) == 1:
         only = ok[0]
         if only.agent == "database" and request.session_id and only.summary:
-            return (
-                only.summary,
-                sql,
-                follow_ups or _default_follow_ups(),
-                category,
-                row_count,
-                data_source,
-                validation,
-                router,
-            )
+            return _pack(only.summary)
         if only.agent == "database" and not request.session_id:
-            answer = _mode1_explain(resolved, only)
-            return answer, None, _default_follow_ups(), category, row_count, data_source, validation, router
+            return _pack(_mode1_explain(resolved, only), None)
         return (
             only.summary,
-            sql,
+            None,
+            False,
+            None,
             follow_ups or _default_follow_ups(),
             category or only.agent,
             row_count,
@@ -246,10 +257,8 @@ def _merge(
             router,
         )
 
-    # Multi-agent merge
     parts: list[str] = []
     if db and db.summary:
-        # Session: SQL agent answer is authoritative summary
         if request.session_id:
             parts.append(db.summary)
         else:
@@ -259,14 +268,9 @@ def _merge(
         agent = by_agent.get(name)
         if not agent or agent is db:
             continue
-        # Avoid duplicating knowledge when schema already returned catalog
-        if name == "knowledge" and "schema" in by_agent and len(agent.summary) < 40:
-            continue
         if name == "knowledge" and "schema" in by_agent:
-            # Schema catalog is enough for "explain every table"
             continue
         if name in ("analytics", "recommendation") and request.session_id and db:
-            # Append as sections when present
             header = "## Analysis" if name == "analytics" else "## Recommendations"
             body = agent.summary.strip()
             if body.startswith("#"):
@@ -277,20 +281,10 @@ def _merge(
         if name not in ("analytics", "recommendation") or not db:
             parts.append(agent.summary)
 
-    answer = "\n\n".join(p for p in parts if p).strip()
-    if not answer:
-        answer = ok[-1].summary
-
-    return (
-        answer,
-        sql,
-        follow_ups or _default_follow_ups(),
-        category or "multi_agent",
-        row_count,
-        data_source,
-        validation,
-        router,
-    )
+    answer = "\n\n".join(p for p in parts if p).strip() or ok[-1].summary
+    out = list(_pack(answer))
+    out[5] = category or "multi_agent"
+    return tuple(out)
 
 
 def _mode1_explain(question: str, db: AgentResult) -> str:
