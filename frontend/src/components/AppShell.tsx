@@ -108,7 +108,7 @@ export function AppShell({
                 sqlConnected ? "text-zinc-300" : "text-sky-300/80"
               }`}
             >
-              {sqlConnected ? "Connected · SQL Mode" : "Not connected"}
+              {sqlConnected ? "Connected · Copilot Ready" : "Not connected"}
             </p>
           </div>
         </div>

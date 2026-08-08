@@ -13,5 +13,15 @@ export function toBusinessAnswer(content: string): string {
   );
   text = text.replace(/```sql[\s\S]*?```/gi, "");
 
+  // Strip leftover technical footers that may appear in older answers.
+  text = text.replace(
+    /(?:^|\n)\*\*(?:Tool|Router|Execution Time|Validation|Data Source)\*\*:?.*$/gim,
+    "",
+  );
+  text = text.replace(
+    /(?:^|\n)(?:Tool used|Router decision|Execution time|Query validation)\s*:.*$/gim,
+    "",
+  );
+
   return text.replace(/\n{3,}/g, "\n\n").trim();
 }

@@ -280,15 +280,6 @@ export function Workspace() {
         </div>
 
         <div className="px-4 py-4">
-          {!empty && sqlConnected && (
-            <div className="mx-auto mb-3 max-w-3xl">
-              <SuggestionChips
-                disabled={loading}
-                items={GENERIC_SQL_CHIPS}
-                onSelect={(prompt) => void ask(prompt)}
-              />
-            </div>
-          )}
           <ChatInput
             value={input}
             loading={loading}

@@ -247,27 +247,34 @@ def profile_to_text(profile: DatabaseProfile, *, max_chars: int = 14_000) -> str
     return semantic_profile_text(profile, max_chars=max_chars)
 
 
-def profile_schema_preview(profile: DatabaseProfile, *, max_lines: int = 60) -> str:
-    """Short preview for the Data Sources UI (includes semantic roles)."""
+def profile_schema_preview(profile: DatabaseProfile, *, max_lines: int = 80) -> str:
+    """Short preview for the Data Sources UI (includes semantic roles + purpose)."""
+    mode = "Semiconductor Mode" if getattr(profile, "semiconductor_mode", False) else "Generic SQL Mode"
     lines = [
-        f"# Semantic Profile · {profile.database}",
+        f"# Semantic Profile · {profile.database} · {mode}",
         f"Schemas: {', '.join(profile.schemas) or '(none)'}",
         f"Tables: {profile.table_count} · Views: {profile.view_count}",
+        "",
+        "On connect the assistant inferred business roles (Fact / Dimension / View).",
         "",
     ]
     for tp in profile.tables[:40]:
         role = tp.business_role or "Table"
-        col_bits = [f"{n}:{t}" for n, t in tp.columns[:10]]
+        purpose = (tp.purpose or "")[:80]
+        col_bits = [f"{n}:{t}" for n, t in tp.columns[:8]]
         extra = len(tp.columns) - len(col_bits)
         if extra > 0:
             col_bits.append(f"+{extra} more")
-        lines.append(
-            f"{tp.schema}.{tp.name} ({role}): {', '.join(col_bits)}"
-        )
+        lines.append(f"{tp.schema}.{tp.name} ({role})")
+        if purpose:
+            lines.append(f"  Purpose: {purpose}")
+        lines.append(f"  Columns: {', '.join(col_bits)}")
     for vp in profile.views[:20]:
         role = vp.business_role or "Analytical View"
-        col_bits = [f"{n}:{t}" for n, t in vp.columns[:10]]
-        lines.append(f"{vp.schema}.{vp.name} ({role}): {', '.join(col_bits)}")
+        purpose = (vp.purpose or "")[:80]
+        lines.append(f"{vp.schema}.{vp.name} ({role})")
+        if purpose:
+            lines.append(f"  Purpose: {purpose}")
     return "\n".join(lines[:max_lines])
 
 

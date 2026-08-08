@@ -163,7 +163,11 @@ KNOWLEDGE_FOLLOW_UPS = [
 def follow_ups_for(category: QuestionCategory) -> list[str]:
     if category == QuestionCategory.METADATA:
         return list(METADATA_FOLLOW_UPS)
-    if category == QuestionCategory.DATABASE_UNDERSTANDING:
+    if category in (
+        QuestionCategory.DATABASE_UNDERSTANDING,
+        QuestionCategory.BUSINESS_UNDERSTANDING,
+        QuestionCategory.SCHEMA,
+    ):
         return list(UNDERSTANDING_FOLLOW_UPS)
     if category == QuestionCategory.KNOWLEDGE:
         return list(KNOWLEDGE_FOLLOW_UPS)

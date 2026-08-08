@@ -137,7 +137,7 @@ def _base_response(
         "row_count": row_count,
         "data_source": f"Azure SQL · {config_database}",
         "tool": "sql_agent",
-        "tool_label": "Generic SQL Agent",
+        "tool_label": "Azure Data Copilot",
         "category": category.value,
         "router_decision": category.value,
         "validation_result": _safe_validation(validation_result),
@@ -277,9 +277,17 @@ def _handle_metadata(session_id: str, config, plan: Plan, started: float) -> dic
                     )
                     sql_used = result.sql
                     row_count = len(rows)
-        elif intent == MetadataIntent.LIST_TABLES:
-            answer = format_table_catalog(profile)
-            row_count = profile.table_count
+        elif intent in (MetadataIntent.LIST_TABLES, MetadataIntent.EXPLAIN_ALL):
+            answer = format_explain_tables(
+                profile,
+                include_views=(intent == MetadataIntent.EXPLAIN_ALL),
+            )
+            row_count = profile.table_count + (
+                profile.view_count if intent == MetadataIntent.EXPLAIN_ALL else 0
+            )
+        elif intent == MetadataIntent.DESCRIBE_SCHEMA:
+            answer = format_explain_tables(profile, include_views=True)
+            row_count = profile.table_count + profile.view_count
         elif intent == MetadataIntent.LIST_VIEWS:
             answer = format_views_catalog(profile)
             row_count = profile.view_count
@@ -300,11 +308,18 @@ def _handle_metadata(session_id: str, config, plan: Plan, started: float) -> dic
             primary = bundle.results[-1] if bundle.results else None
             row_count = primary.row_count if primary else 0
         else:
-            answer = format_table_catalog(profile)
+            answer = format_explain_tables(profile, include_views=False)
 
-        suggestions = follow_ups_for_metadata(
-            intent, profile, sample_table=sample_table
+        suggestions = dynamic_follow_ups(
+            category=QuestionCategory.METADATA,
+            question=plan.question,
+            profile=profile,
+            answer=answer,
         )
+        if not suggestions:
+            suggestions = follow_ups_for_metadata(
+                intent, profile, sample_table=sample_table
+            )
         return _base_response(
             answer=answer,
             config_database=config.database,
@@ -327,7 +342,7 @@ def _handle_metadata(session_id: str, config, plan: Plan, started: float) -> dic
 
 
 def _handle_understanding(session_id: str, config, started: float) -> dict:
-    """Database Understanding — NEVER generate SQL; use cached profile."""
+    """Business understanding — NEVER generate SQL; use cached semantic profile."""
     try:
         profile = ensure_profile(session_id, config)
         evidence = profile_to_text(profile)
@@ -338,31 +353,77 @@ def _handle_understanding(session_id: str, config, started: float) -> dict:
             ],
             temperature=0.2,
         )
+        answer = summary.strip()
         return _base_response(
-            answer=summary.strip(),
+            answer=answer,
             config_database=config.database,
-            category=QuestionCategory.DATABASE_UNDERSTANDING,
+            category=QuestionCategory.BUSINESS_UNDERSTANDING,
             sql=None,
             row_count=profile.table_count + profile.view_count,
-            validation_result="database profile → LLM summary (no SQL generation)",
+            validation_result="semantic profile → business narrative (no SQL)",
             execution_time=round(time.perf_counter() - started, 2),
-            follow_ups=follow_ups_for_understanding(profile),
+            follow_ups=dynamic_follow_ups(
+                category=QuestionCategory.BUSINESS_UNDERSTANDING,
+                question="What is this dataset about?",
+                profile=profile,
+                answer=answer,
+            )
+            or follow_ups_for_understanding(profile),
         )
     except ProfileBuildError:
         return _base_response(
             answer=FRIENDLY_PROFILE_ERROR,
             config_database=config.database,
-            category=QuestionCategory.DATABASE_UNDERSTANDING,
+            category=QuestionCategory.BUSINESS_UNDERSTANDING,
             validation_result="profile build failed",
             execution_time=round(time.perf_counter() - started, 2),
         )
     except Exception as exc:  # noqa: BLE001
-        logger.exception("Database understanding failed: %s", exc)
+        logger.exception("Business understanding failed: %s", exc)
         return _base_response(
             answer=FRIENDLY_PROFILE_ERROR,
             config_database=config.database,
-            category=QuestionCategory.DATABASE_UNDERSTANDING,
+            category=QuestionCategory.BUSINESS_UNDERSTANDING,
             validation_result="understanding failed",
+            execution_time=round(time.perf_counter() - started, 2),
+        )
+
+
+def _handle_schema(session_id: str, config, plan: Plan, started: float) -> dict:
+    """Schema / explain-every-table — profile catalog, no free-form SQL."""
+    try:
+        profile = ensure_profile(session_id, config)
+        answer = format_explain_tables(profile, include_views=True)
+        return _base_response(
+            answer=answer,
+            config_database=config.database,
+            category=QuestionCategory.SCHEMA,
+            sql=None,
+            row_count=profile.table_count + profile.view_count,
+            validation_result="semantic catalog · explain all objects",
+            execution_time=round(time.perf_counter() - started, 2),
+            follow_ups=dynamic_follow_ups(
+                category=QuestionCategory.SCHEMA,
+                question=plan.question,
+                profile=profile,
+                answer=answer,
+            ),
+        )
+    except ProfileBuildError:
+        return _base_response(
+            answer=FRIENDLY_PROFILE_ERROR,
+            config_database=config.database,
+            category=QuestionCategory.SCHEMA,
+            validation_result="profile unavailable",
+            execution_time=round(time.perf_counter() - started, 2),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Schema explanation failed")
+        return _base_response(
+            answer=sanitize_user_message(str(exc), fallback=FRIENDLY_QUERY_ERROR),
+            config_database=config.database,
+            category=QuestionCategory.SCHEMA,
+            validation_result="failed (schema)",
             execution_time=round(time.perf_counter() - started, 2),
         )
 
@@ -568,6 +629,7 @@ def _handle_kpi(session_id: str, config, plan: Plan, schema: str, started: float
         answer = format_kpi_answer(plan.question, totals)
         mode_note = "Semiconductor" if route.semiconductor_mode else "Generic"
         grain_note = totals.grain.value if totals.grain else "unknown"
+        profile_for_fu = profile
         return _base_response(
             answer=answer,
             config_database=config.database,
@@ -577,10 +639,15 @@ def _handle_kpi(session_id: str, config, plan: Plan, schema: str, started: float
             validation_result=(
                 f"kpi · {mode_note} · grain={grain_note} · "
                 f"source={totals.source} · validated={totals.validated}"
-                + (f" · {route.guidance[:60]}" if route.guidance else "")
             ),
             execution_time=round(time.perf_counter() - started, 2),
-            follow_ups=follow_ups_for(QuestionCategory.KPI),
+            follow_ups=dynamic_follow_ups(
+                category=QuestionCategory.KPI,
+                question=plan.question,
+                profile=profile_for_fu,
+                answer=answer,
+            )
+            or follow_ups_for(QuestionCategory.KPI),
         )
     except ProfileBuildError:
         return _base_response(
@@ -669,13 +736,20 @@ def _handle_analytical(
     )
 
 
-def ask_sql_agent(session_id: str, question: str) -> dict:
+def ask_sql_agent(
+    session_id: str,
+    question: str,
+    *,
+    history: list | None = None,
+) -> dict:
     """
-    Intent → Route → Execute.
+    Intent → Route → Execute (enterprise analytics assistant).
 
-    1. Classify WHAT (KPI | Metadata | Analytical | Knowledge | Smalltalk)
-    2. Determine WHICH table/view (semantic routing / Semiconductor locks)
-    3. Generate or skip SQL accordingly
+    1. Resolve conversation context for follow-ups
+    2. Classify WHAT (KPI | Schema | Business understanding | Metadata |
+       Analytical | Knowledge | Smalltalk)
+    3. Determine WHICH table/view (semantic routing / Semiconductor locks)
+    4. Generate or skip SQL accordingly
     """
     cleaned = question.strip()
     if not cleaned:
@@ -686,14 +760,18 @@ def ask_sql_agent(session_id: str, question: str) -> dict:
         raise ValueError("No active database session. Connect a data source first.")
 
     started = time.perf_counter()
-    plan = classify_question(cleaned)
+    resolved = resolve_contextual_question(cleaned, history)
+    plan = classify_question(resolved)
+
     # Safety net: force KPI handler when business-metric language is present
+    intent_probe = resolved.split("(Conversation context")[0].strip() or resolved
     if (
-        is_kpi_route(cleaned)
+        is_kpi_route(intent_probe)
         and plan.category
         not in (
             QuestionCategory.METADATA,
-            QuestionCategory.DATABASE_UNDERSTANDING,
+            QuestionCategory.SCHEMA,
+            QuestionCategory.BUSINESS_UNDERSTANDING,
             QuestionCategory.KNOWLEDGE,
             QuestionCategory.SMALLTALK,
         )
@@ -705,9 +783,9 @@ def ask_sql_agent(session_id: str, question: str) -> dict:
 
         plan = PlanCls(
             category=QuestionCategory.KPI,
-            question=cleaned,
+            question=intent_probe,
             intent=QuestionIntent.KPI,
-            response_mode=classify_response_mode(cleaned),
+            response_mode=classify_response_mode(intent_probe),
         )
 
     schema = _ensure_schema(session_id, config)
@@ -716,15 +794,43 @@ def ask_sql_agent(session_id: str, question: str) -> dict:
         return _handle_smalltalk(config, schema, started)
 
     if plan.category == QuestionCategory.KNOWLEDGE:
-        return _handle_knowledge(session_id, config, plan, started)
+        result = _handle_knowledge(session_id, config, plan, started)
+        try:
+            profile = ensure_profile(session_id, config)
+            result["follow_ups"] = dynamic_follow_ups(
+                category=QuestionCategory.KNOWLEDGE,
+                question=plan.question,
+                profile=profile,
+                answer=result.get("answer"),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return result
+
+    if plan.category == QuestionCategory.SCHEMA:
+        return _handle_schema(session_id, config, plan, started)
 
     if plan.category == QuestionCategory.METADATA:
         return _handle_metadata(session_id, config, plan, started)
 
-    if plan.category == QuestionCategory.DATABASE_UNDERSTANDING:
+    if plan.category in (
+        QuestionCategory.BUSINESS_UNDERSTANDING,
+        QuestionCategory.DATABASE_UNDERSTANDING,
+    ):
         return _handle_understanding(session_id, config, started)
 
     if plan.category == QuestionCategory.KPI:
         return _handle_kpi(session_id, config, plan, schema, started)
 
-    return _handle_analytical(session_id, config, plan, schema, started)
+    result = _handle_analytical(session_id, config, plan, schema, started)
+    try:
+        profile = ensure_profile(session_id, config)
+        result["follow_ups"] = dynamic_follow_ups(
+            category=QuestionCategory.ANALYTICAL,
+            question=plan.question,
+            profile=profile,
+            answer=result.get("answer"),
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    return result

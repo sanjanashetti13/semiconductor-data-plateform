@@ -156,7 +156,18 @@ def sql_agent_chat(payload: SqlAgentChatRequest) -> SqlAgentChatResponse:
         )
 
     try:
-        result = ask_sql_agent(payload.session_id, question)
+        history_payload = [
+            {
+                "role": m.role if hasattr(m, "role") else m.get("role"),
+                "content": m.content if hasattr(m, "content") else m.get("content"),
+            }
+            for m in (payload.history or [])
+        ]
+        result = ask_sql_agent(
+            payload.session_id,
+            question,
+            history=history_payload,
+        )
     except UnsafeSqlError as exc:
         logger.warning("Unsafe SQL rejected: %s", exc)
         raise HTTPException(
@@ -212,8 +223,19 @@ def sql_agent_chat(payload: SqlAgentChatRequest) -> SqlAgentChatResponse:
         follow_ups=result.get("follow_ups", ERROR_SUGGESTIONS),
         category=result.get("category"),
         router_decision=result.get("router_decision") or result.get("category"),
-        validation_result=result.get("validation_result"),
+        validation_result=_safe_dev_status(result.get("validation_result")),
     )
+
+
+def _safe_dev_status(value: str | None) -> str | None:
+    if value is None:
+        return None
+    from ai.sql_agent.errors import looks_like_raw_db_error
+
+    text = str(value).strip()
+    if looks_like_raw_db_error(text):
+        return "failed (see server logs)"
+    return text[:220] if len(text) > 220 else text
 
 
 def _should_replace_answer(answer: str) -> bool:
