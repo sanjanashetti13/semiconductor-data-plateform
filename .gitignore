@@ -1,3 +1,5 @@
+.env
+
 # Byte-compiled / cache
 __pycache__/
 *.py[cod]
@@ -9,6 +11,7 @@ __pycache__/
 dist/
 build/
 *.egg
+*.pyc
 
 # Virtual environments
 .venv/
@@ -82,3 +85,13 @@ ai/generated/*
 *.temp
 *.log
 *.bak
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/.vite/
+
+# Docker
+*.pid
+

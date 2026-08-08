@@ -1,6 +1,6 @@
-"""AI orchestration package for LLM-assisted data engineering workflows.
+"""AI orchestration package for the Semiconductor Manufacturing Copilot."""
 
-LangChain agents and Groq/OpenAI integrations will be implemented in Phase 3.
-"""
+from ai.copilot import ask, ask_with_metadata
 
-__version__ = "0.1.0"
+__all__ = ["ask", "ask_with_metadata"]
+__version__ = "0.2.0"
