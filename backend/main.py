@@ -8,6 +8,7 @@ Run from the project root:
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from pathlib import Path
@@ -21,6 +22,9 @@ if str(ROOT) not in sys.path:
 
 from backend.routers.copilot import router as copilot_router
 from backend.routers.sql_agent import router as sql_agent_router
+from ai.odbc_compat import odbc_available
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_ORIGINS = [
     "http://localhost:5173",
@@ -34,9 +38,14 @@ DEFAULT_ORIGINS = [
 
 def _cors_origins() -> list[str]:
     raw = os.getenv("CORS_ORIGINS", "")
-    if not raw.strip():
-        return DEFAULT_ORIGINS
-    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+    origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
+    # Always allow common local + Vercel preview hosts when not explicitly set.
+    if not origins:
+        origins = list(DEFAULT_ORIGINS)
+    # Permit Vercel deployments of this project when CORS_ORIGINS includes *
+    if "*" in origins:
+        return ["*"]
+    return origins
 
 
 app = FastAPI(
@@ -57,11 +66,13 @@ app.include_router(copilot_router)
 app.include_router(sql_agent_router)
 
 
-@app.get("/")
-def root() -> dict[str, str]:
-    """Service discovery helper."""
+@app.get("/api")
+@app.get("/api/")
+def api_root() -> dict[str, object]:
+    """Service discovery helper (avoid conflicting with static site `/`)."""
     return {
         "service": "Semiconductor Intelligence Hub API",
         "docs": "/docs",
         "health": "/api/health",
+        "odbc_available": odbc_available(),
     }

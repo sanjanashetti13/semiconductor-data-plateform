@@ -5,9 +5,8 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Any, Generator, Iterable, Sequence
 
-import pyodbc
-
-from ai.config import Settings, get_settings, require_mode1_sql
+from ai.config import Settings, require_mode1_sql
+from ai.odbc_compat import OdbcUnavailableError, get_pyodbc
 
 
 def build_connection_string(settings: Settings | None = None) -> str:
@@ -27,8 +26,9 @@ def build_connection_string(settings: Settings | None = None) -> str:
 @contextmanager
 def get_connection(
     settings: Settings | None = None,
-) -> Generator[pyodbc.Connection, None, None]:
+) -> Generator[Any, None, None]:
     """Open a short-lived Azure SQL connection."""
+    pyodbc = get_pyodbc()
     connection = pyodbc.connect(build_connection_string(settings))
     try:
         yield connection
@@ -42,13 +42,16 @@ def execute_query(
     settings: Settings | None = None,
 ) -> list[tuple]:
     """Execute a SQL query and return all rows as tuples."""
-    with get_connection(settings) as connection:
-        cursor = connection.cursor()
-        if params:
-            cursor.execute(sql, params)
-        else:
-            cursor.execute(sql)
-        return cursor.fetchall()
+    try:
+        with get_connection(settings) as connection:
+            cursor = connection.cursor()
+            if params:
+                cursor.execute(sql, params)
+            else:
+                cursor.execute(sql)
+            return cursor.fetchall()
+    except OdbcUnavailableError:
+        raise
 
 
 def format_rows(rows: Iterable[Any], columns: Sequence[str] | None = None) -> str:

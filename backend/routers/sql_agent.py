@@ -23,6 +23,7 @@ from ai.sql_agent.errors import (
     FRIENDLY_SESSION_ERROR,
     sanitize_user_message,
 )
+from ai.odbc_compat import OdbcUnavailableError
 from ai.sql_agent.profiler import (
     ProfileBuildError,
     build_database_profile,
@@ -65,6 +66,18 @@ def connect_database(payload: SqlConnectRequest) -> SqlConnectResponse:
 
     try:
         test_connection(config)
+    except OdbcUnavailableError as exc:
+        logger.error("ODBC unavailable on this host: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "message": str(exc),
+                "suggestions": [
+                    "Run the API locally or on Azure App Service / Render / Railway",
+                    "Confirm GROQ_API_KEY is set for chat features",
+                ],
+            },
+        ) from exc
     except Exception as exc:  # noqa: BLE001
         logger.exception(
             "SQL Agent connection failed for server=%s db=%s",

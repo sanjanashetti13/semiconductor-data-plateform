@@ -122,22 +122,30 @@ Copy `.env.example` → `.env`. **Never commit `.env`.**
 
 ## Deployment Guide
 
-### Vercel (FastAPI API)
+### Vercel (UI + API)
 
-This repo’s FastAPI app is `backend.main:app` (not root `app.py`, which is a CLI).
+This monorepo deploys on Vercel as:
 
-`pyproject.toml` already sets:
+1. **Static UI** — `frontend` built into `public/`
+2. **FastAPI** — `backend.main:app` for `/api/*`
 
-```toml
-[tool.vercel]
-entrypoint = "backend.main:app"
-```
+`pyproject.toml` sets `entrypoint = "backend.main:app"`.  
+`scripts/vercel_build.sh` builds the React app into `public/`.
 
-1. Import the GitHub repo in Vercel
-2. Set env vars: `GROQ_API_KEY`, `CORS_ORIGINS` (include your Vercel frontend URL), optional `AZURE_SQL_*`
-3. Redeploy
+**Required Vercel env vars**
 
-**Note:** `pyodbc` needs the Microsoft ODBC driver on the host. If Azure SQL fails on Vercel’s Python runtime, deploy the API on Azure App Service / Render / Railway (full ODBC support) and host only the frontend on Vercel.
+- `GROQ_API_KEY`
+- `CORS_ORIGINS` — include `https://your-app.vercel.app` (or `*`)
+
+**Azure SQL on Vercel**
+
+Vercel’s Python runtime does **not** include Microsoft ODBC drivers.  
+Database Connection will return a clear 503 on that host.
+
+For full Azure SQL:
+
+- Run API on **Azure App Service / Render / Railway** with `backend/requirements.txt` (includes `pyodbc`), **or**
+- Run `uvicorn` locally and point `VITE_API_BASE_URL` at that API
 
 ### Docker Compose (local / VM)
 

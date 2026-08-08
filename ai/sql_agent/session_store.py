@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Generator
+from typing import Any, Generator
 from uuid import uuid4
 
-import pyodbc
+from ai.odbc_compat import get_pyodbc
 
 # Keep schema text small enough for Groq context windows (wide tables like SECOM).
 DEFAULT_MAX_TABLES = 40
@@ -79,8 +79,9 @@ def build_odbc_string(config: SqlConnectionConfig) -> str:
 
 
 @contextmanager
-def open_connection(config: SqlConnectionConfig) -> Generator[pyodbc.Connection, None, None]:
+def open_connection(config: SqlConnectionConfig) -> Generator[Any, None, None]:
     """Open a short-lived connection for the given config."""
+    pyodbc = get_pyodbc()
     connection = pyodbc.connect(build_odbc_string(config), timeout=15)
     try:
         yield connection
