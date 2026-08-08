@@ -1,0 +1,166 @@
+# Build React (Vite) + deploy FastAPI to Azure App Service (Linux, Python 3.11).
+# No Docker. Frontend is built into frontend/dist and served by backend.main:app.
+#
+# Required GitHub secrets (Azure Deployment Center / federated credentials — OIDC):
+#   AZUREAPPSERVICE_CLIENTID_<suffix>
+#   AZUREAPPSERVICE_TENANTID_<suffix>
+#   AZUREAPPSERVICE_SUBSCRIPTIONID_<suffix>
+# Replace the secret names below with the exact names Azure created in your repo
+# (keep the azure/login inputs as client-id / tenant-id / subscription-id).
+#
+# Required GitHub variable (or edit env.AZURE_WEBAPP_NAME below):
+#   AZURE_WEBAPP_NAME = your App Service name
+#
+# App Service Application Settings (Configuration → Application settings):
+#   APP_ENV=production
+#   GROQ_API_KEY=...
+#   SQL_SERVER=...
+#   SQL_DATABASE=...
+#   SQL_USERNAME=...
+#   SQL_PASSWORD=...
+# Startup Command: bash startup.sh
+
+name: Deploy to Azure App Service
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+  # Override via repo variable AZURE_WEBAPP_NAME if set.
+  AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend (production)
+        working-directory: frontend
+        # Empty VITE_API_BASE_URL → same-origin /api/... (never bake secrets into the bundle)
+        env:
+          VITE_API_BASE_URL: ""
+        run: npm run build
+
+      - name: Verify frontend/dist/index.html
+        run: |
+          test -f frontend/dist/index.html
+          echo "frontend/dist/index.html OK"
+
+      - name: Create virtual environment and install Python dependencies
+        run: |
+          python -m venv antenv
+          source antenv/bin/activate
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Assemble deployment package
+        run: |
+          set -euo pipefail
+          rm -rf _publish
+          mkdir -p _publish/frontend
+
+          # Runtime application code
+          cp -a backend _publish/backend
+          cp -a ai _publish/ai
+          cp -a frontend/dist _publish/frontend/dist
+          cp requirements.txt _publish/requirements.txt
+          cp startup.sh _publish/startup.sh
+          cp runtime.txt _publish/runtime.txt
+
+          # Azure App Service Linux expects antenv at site root when pre-built
+          cp -a antenv _publish/antenv
+
+          # Drop caches / secrets / local junk from the package
+          find _publish -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find _publish -type d -name '.pytest_cache' -prune -exec rm -rf {} +
+          find _publish -name '*.pyc' -delete
+          rm -rf _publish/backend/static _publish/public || true
+          rm -f _publish/.env _publish/**/.env || true
+
+          # Sanity checks
+          test -f _publish/frontend/dist/index.html
+          test -f _publish/startup.sh
+          test -f _publish/requirements.txt
+          test -d _publish/backend
+          test -d _publish/ai
+          test -d _publish/antenv
+          echo "Package contents:"
+          find _publish -maxdepth 3 -type f | head -n 80
+
+      - name: Upload artifact for deployment
+        uses: actions/upload-artifact@v4
+        with:
+          name: azure-app-package
+          path: _publish
+          if-no-files-found: error
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      id-token: write
+      contents: read
+    environment:
+      name: Production
+      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
+
+    steps:
+      - name: Resolve App Service name
+        id: appname
+        run: |
+          NAME="${{ env.AZURE_WEBAPP_NAME }}"
+          if [ -z "$NAME" ]; then
+            echo "Set repository variable AZURE_WEBAPP_NAME to your Azure App Service name."
+            exit 1
+          fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: azure-app-package
+          path: _publish
+
+      - name: Login to Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          # IMPORTANT: Replace these secret names with the exact Azure-generated
+          # names from your repo (Settings → Secrets). Keep the input keys as:
+          # client-id / tenant-id / subscription-id.
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy to Azure Web App
+        id: deploy-to-webapp
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ steps.appname.outputs.name }}
+          package: _publish
