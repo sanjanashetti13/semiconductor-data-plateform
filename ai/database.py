@@ -7,12 +7,12 @@ from typing import Any, Generator, Iterable, Sequence
 
 import pyodbc
 
-from ai.config import Settings, get_settings
+from ai.config import Settings, get_settings, require_mode1_sql
 
 
 def build_connection_string(settings: Settings | None = None) -> str:
-    """Build an ODBC connection string for Azure SQL."""
-    cfg = settings or get_settings()
+    """Build an ODBC connection string for Azure SQL (Mode 1 curated warehouse)."""
+    cfg = require_mode1_sql(settings)
     return (
         f"DRIVER={{{cfg.sql_driver}}};"
         f"SERVER={cfg.sql_server};"

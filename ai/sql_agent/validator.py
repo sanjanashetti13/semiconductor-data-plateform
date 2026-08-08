@@ -17,12 +17,15 @@ FORBIDDEN_KEYWORDS = (
     "GRANT",
     "REVOKE",
     "CREATE",
-    "REPLACE",
     "CALL",
-    "INTO",
     "OPENROWSET",
     "OPENDATASOURCE",
     "BULK",
+    "BACKUP",
+    "RESTORE",
+    "SHUTDOWN",
+    "WAITFOR",
+    "DBCC",
 )
 
 
@@ -56,6 +59,10 @@ def validate_select_only(sql: str) -> str:
     upper = cleaned.upper()
     if not (upper.startswith("SELECT") or upper.startswith("WITH")):
         raise UnsafeSqlError("Only SELECT queries are allowed.")
+
+    # Block SELECT INTO (writes a new table)
+    if re.search(r"(?<![A-Z0-9_])INTO(?![A-Z0-9_])", upper):
+        raise UnsafeSqlError("Forbidden SQL keyword detected: INTO")
 
     for keyword in FORBIDDEN_KEYWORDS:
         pattern = rf"(?<![A-Z0-9_]){re.escape(keyword)}(?![A-Z0-9_])"

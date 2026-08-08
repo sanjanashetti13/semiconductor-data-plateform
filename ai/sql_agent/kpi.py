@@ -49,16 +49,34 @@ class KpiTotals:
 
 _KPI_ROUTE = re.compile(
     r"\b("
-    r"passed|failed|yield|"
+    r"how\s+many\s+(passed|failed|pass|fail|wafers?)|"
+    r"number\s+of\s+(passed|failed|pass|fail|wafers?)|"
+    r"overall\s+yield|yield\s*(%|percentage|percent|rate)\b|"
+    r"^passed(\s+wafers?)?\s*\??$|"
+    r"^failed(\s+wafers?)?\s*\??$|"
+    r"^yield\s*\??$|"
     r"production\s+summary|overall\s+summary|manufacturing\s+summary|"
     r"total\s+wafers?|total\s+production|overall\s+production|"
     r"pass\s+(rate|percentage|percent)|"
-    r"fail(ure)?\s+(rate|percentage|percent)|"
-    r"how\s+many\s+(passed|failed|pass|fail|wafers?)|"
-    r"number\s+of\s+(passed|failed|pass|fail|wafers?)"
+    r"fail(ure)?\s+(rate|percentage|percent)"
     r")\b",
     re.IGNORECASE,
 )
+
+_REASONING_BLOCK = re.compile(
+    r"\b(influence|affect|factors?|reduce\s+failures?|improve\s+yield|"
+    r"recommend|root\s+cause|how\s+would|how\s+can|how\s+to)\b",
+    re.I,
+)
+
+
+def is_kpi_route(question: str) -> bool:
+    """True when the question must use the KPI handler (no free-form LLM SQL)."""
+    q = question or ""
+    if _REASONING_BLOCK.search(q):
+        return False
+    return bool(_KPI_ROUTE.search(q))
+
 
 _METRIC_PASSED = re.compile(
     r"\b(how\s+many\s+)?pass(ed|es)?(\s+wafers?)?\b", re.I
@@ -78,11 +96,6 @@ _METRIC_SUMMARY = re.compile(
     r"\b(production|manufacturing|overall)\s+summary\b|\bkpi\b",
     re.I,
 )
-
-
-def is_kpi_route(question: str) -> bool:
-    """True when the question must use the KPI handler (no free-form LLM SQL)."""
-    return bool(_KPI_ROUTE.search(question or ""))
 
 
 def classify_kpi_metric(question: str) -> KpiMetric:

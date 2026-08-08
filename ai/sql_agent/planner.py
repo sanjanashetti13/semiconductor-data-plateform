@@ -24,6 +24,7 @@ class QuestionCategory(str, Enum):
     METADATA = "metadata"
     SCHEMA = "schema"
     BUSINESS_UNDERSTANDING = "business_understanding"
+    BUSINESS_REASONING = "business_reasoning"
     ANALYTICAL = "analytical"
     KNOWLEDGE = "knowledge"
     SMALLTALK = "smalltalk"
@@ -199,6 +200,14 @@ def classify_question(question: str) -> Plan:
             question=cleaned,
             intent=intent,
             response_mode=classify_response_mode(intent_text),
+        )
+
+    if intent == QuestionIntent.BUSINESS_REASONING:
+        return Plan(
+            category=QuestionCategory.BUSINESS_REASONING,
+            question=cleaned,
+            intent=intent,
+            response_mode=ResponseMode.DETAILED,
         )
 
     if intent == QuestionIntent.BUSINESS_UNDERSTANDING:

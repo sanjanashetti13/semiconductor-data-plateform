@@ -1,4 +1,4 @@
-"""Intent classification — WHAT the user is asking (before table routing / SQL)."""
+"""Intent classification — factual SQL vs schema/business reasoning."""
 
 from __future__ import annotations
 
@@ -9,11 +9,12 @@ from enum import Enum
 class QuestionIntent(str, Enum):
     """Primary question intents for the enterprise SQL analytics assistant."""
 
-    KPI = "kpi"
+    KPI = "kpi"  # factual metrics → SQL
     METADATA = "metadata"
-    SCHEMA = "schema"
-    BUSINESS_UNDERSTANDING = "business_understanding"
-    ANALYTICAL = "analytical"
+    SCHEMA = "schema"  # catalog all objects
+    BUSINESS_UNDERSTANDING = "business_understanding"  # whole-DB description
+    BUSINESS_REASONING = "business_reasoning"  # schema-grounded advice (no SQL)
+    ANALYTICAL = "analytical"  # factual analysis → SQL
     KNOWLEDGE = "knowledge"
     SMALLTALK = "smalltalk"
 
@@ -24,7 +25,6 @@ _SMALLTALK = re.compile(
     re.IGNORECASE,
 )
 
-# Domain / conceptual — never SQL (generic + semiconductor)
 _KNOWLEDGE_PATTERNS = re.compile(
     r"\b("
     r"what\s+is\s+(the\s+)?secom(\s+dataset)?|"
@@ -42,23 +42,53 @@ _KNOWLEDGE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Factual KPI asks only — must not catch "what influences yield"
 _KPI_PATTERNS = re.compile(
     r"\b("
     r"how\s+many\s+(passed|failed|pass|fail|wafers?)(\s+wafers?)?|"
     r"number\s+of\s+(passed|failed|pass|fail|wafers?)|"
-    r"passed(\s+wafers?)?|failed(\s+wafers?)?|"
+    r"(?:what\s+is\s+(the\s+)?)?overall\s+yield|"
+    r"(?:what\s+is\s+(the\s+)?)?yield\s*(%|percentage|percent|rate)\b|"
+    r"^yield\s*\??$|"
+    r"^overall\s+yield\s*\??$|"
+    r"passed(\s+wafers?)?\s*\??$|"
+    r"failed(\s+wafers?)?\s*\??$|"
+    r"how\s+many\s+passed|"
+    r"how\s+many\s+failed|"
     r"pass\s+(rate|percentage|percent|%)|"
     r"fail(ure)?\s+(rate|percentage|percent|%)|"
-    r"overall\s+yield|yield\s*(%|percentage|percent|rate)?|"
     r"total\s+wafers?|total\s+production|overall\s+production|"
     r"production\s+summary|manufacturing\s+summary|"
-    r"overall\s+(production\s+)?summary|"
-    r"\bkpi\b|throughput|quality\s+rate|defect\s+rate"
+    r"overall\s+(production\s+)?summary"
     r")\b",
     re.IGNORECASE,
 )
 
-# Business meaning of the connected dataset (profile → narrative, no SQL gen)
+# Schema-grounded reasoning / recommendations — NEVER SQL-only
+_REASONING_PATTERNS = re.compile(
+    r"\b("
+    r"what\s+(factors?\s+)?(influence|affect|drive|impact)s?\b|"
+    r"what\s+influences?\b|"
+    r"how\s+(would|can|do)\s+(you\s+)?(reduce|improve|increase|decrease|fix)|"
+    r"how\s+to\s+(reduce|improve|increase|fix)|"
+    r"recommend(ation)?s?\b|"
+    r"root\s+cause|"
+    r"what\s+causes?\b|"
+    r"why\s+(do|does|are|is|did)\b|"
+    r"what\s+opportunities?\b|"
+    r"machine\s+learning\s+opportunit|"
+    r"ai\s+opportunit|"
+    r"business\s+implications?|"
+    r"how\s+should\s+(we|i|teams?)\b|"
+    r"what\s+should\s+(we|i)\b|"
+    r"leverage\s+(this\s+)?data|"
+    r"reduce\s+failures?|"
+    r"improve\s+yield|"
+    r"factors?\s+influencing"
+    r")\b",
+    re.IGNORECASE,
+)
+
 _BUSINESS_UNDERSTANDING_PHRASES = (
     "what does this database contain",
     "what does the database contain",
@@ -67,6 +97,10 @@ _BUSINESS_UNDERSTANDING_PHRASES = (
     "what's the dataset about",
     "what is this data about",
     "what is the data about",
+    "what is this database used for",
+    "what is the database used for",
+    "what is this data used for",
+    "what is this db used for",
     "summarize what this database",
     "summarize this database",
     "summarize the database",
@@ -92,24 +126,33 @@ _BUSINESS_UNDERSTANDING_PHRASES = (
     "tell me about this dataset",
     "tell me about the dataset",
     "business purpose of this",
+    "purpose of this database",
+    "purpose of this dataset",
     "what can i analyze",
     "what insights can i get",
+    "complete solution",
+    "end to end solution",
 )
 
-# Schema / catalog structure
 _SCHEMA_PATTERNS = re.compile(
     r"\b("
     r"explain\s+(every|all|each)\s+tables?|"
     r"explain\s+tables?|"
     r"describe\s+(every|all|each)\s+tables?|"
     r"what\s+does\s+each\s+table\s+contain|"
+    r"what\s+objects?\s+exist|"
+    r"which\s+objects?\s+exist|"
+    r"list\s+(all\s+)?objects?|"
+    r"show\s+(all\s+)?objects?|"
+    r"what\s+(tables?\s+and\s+views?|views?\s+and\s+tables?)\b|"
     r"describe\s+(the\s+)?schema|"
     r"explain\s+(the\s+)?schema|"
     r"show\s+(the\s+)?schema|"
     r"schema\s+overview|"
     r"database\s+schema|"
     r"table\s+catalog|"
-    r"data\s+dictionary"
+    r"data\s+dictionary|"
+    r"all\s+tables?\s+and\s+views?"
     r")\b",
     re.IGNORECASE,
 )
@@ -137,12 +180,23 @@ def is_schema_question(question: str) -> bool:
     return bool(_SCHEMA_PATTERNS.search(question or ""))
 
 
+def is_reasoning_question(question: str) -> bool:
+    return bool(_REASONING_PATTERNS.search(question or ""))
+
+
+def is_factual_kpi_question(question: str) -> bool:
+    """True only for numeric KPI asks, not yield/failure reasoning."""
+    if is_reasoning_question(question):
+        return False
+    return bool(_KPI_PATTERNS.search(question or ""))
+
+
 def classify_intent(question: str) -> QuestionIntent:
     """
     Classify WHAT the user is asking before routing or SQL generation.
 
-    Order: Smalltalk → Knowledge → KPI → Business understanding → Schema →
-    Metadata → Analytical.
+    Order: Smalltalk → Knowledge → Reasoning → KPI → Business understanding →
+    Schema → Metadata → Analytical.
     """
     cleaned = question.strip()
     if not cleaned:
@@ -154,7 +208,11 @@ def classify_intent(question: str) -> QuestionIntent:
     if _KNOWLEDGE_PATTERNS.search(cleaned):
         return QuestionIntent.KNOWLEDGE
 
-    if _KPI_PATTERNS.search(cleaned):
+    # Reasoning before KPI so "what influences yield" is not treated as a metric fetch
+    if is_reasoning_question(cleaned):
+        return QuestionIntent.BUSINESS_REASONING
+
+    if is_factual_kpi_question(cleaned):
         return QuestionIntent.KPI
 
     if is_understanding_question(cleaned):

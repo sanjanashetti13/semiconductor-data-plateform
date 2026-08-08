@@ -3,7 +3,6 @@
 interface ImportMetaEnv {
   readonly VITE_API_BASE_URL?: string;
   readonly VITE_POWERBI_URL?: string;
-  readonly VITE_GITHUB_URL?: string;
 }
 
 interface ImportMeta {

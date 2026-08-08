@@ -31,6 +31,14 @@ def dynamic_follow_ups(
     view_name = f"{view.schema}.{view.name}" if view else None
     fact_name = f"{fact.schema}.{fact.name}" if fact else None
 
+    if category == QuestionCategory.BUSINESS_REASONING:
+        return [
+            "How many failed wafers?",
+            "What is the overall yield?",
+            "Explain every table",
+            f"Show sample rows from {fact_name}" if fact_name else "What is this database used for?",
+        ][:4]
+
     if category == QuestionCategory.KPI:
         if "pass" in q and "fail" not in q:
             suggestions = [

@@ -7,16 +7,17 @@ from enum import Enum
 
 
 class ResponseMode(str, Enum):
-    DIRECT = "direct"  # 1–3 sentences, default for factual asks
-    STANDARD = "standard"  # Summary + Key Findings, <150 words
-    DETAILED = "detailed"  # Summary + Analysis + Recommendations, ≤300 words
+    DIRECT = "direct"  # one concise sentence / 1–3 sentences
+    STANDARD = "standard"  # short structured explanation
+    DETAILED = "detailed"  # summary + recommendations
 
 
 _DETAILED_PATTERNS = re.compile(
     r"\b("
     r"explain|analyze|analyse|analysis|why\b|root\s+cause|full\s+report|"
     r"recommendations?|recommend|detailed|in\s+detail|deep\s+dive|"
-    r"comprehensive|thorough"
+    r"comprehensive|thorough|influence|affect|reduce\s+failures?|"
+    r"improve\s+yield|factors?|opportunit"
     r")\b",
     re.IGNORECASE,
 )
@@ -25,17 +26,18 @@ _STANDARD_PATTERNS = re.compile(
     r"\b("
     r"overall\s+(production\s+)?summary|monthly\s+yield|compare|comparison|"
     r"best\s+month|worst\s+month|trend|breakdown|by\s+month|over\s+time|"
-    r"production\s+summary|sensor\s+comparison|versus|vs\.?"
+    r"production\s+summary|sensor\s+comparison|versus|vs\.?|"
+    r"what\s+is\s+this\s+(dataset|database)|used\s+for|overview|"
+    r"explain\s+(every|all|each)\s+tables?|what\s+objects?"
     r")\b",
     re.IGNORECASE,
 )
 
-# Strong factual / scalar cues → Direct (default)
 _DIRECT_PATTERNS = re.compile(
     r"\b("
-    r"how\s+many|what\s+is\s+the|what'?s\s+the|count|total|percentage|percent|"
-    r"yield|failed|passes?|pass\s+rate|fail\s+rate|row\s+counts?|"
-    r"list\s+the|show\s+me\s+the\s+number|number\s+of"
+    r"how\s+many|what\s+is\s+the\s+overall\s+yield|count|total\s+wafers?|"
+    r"passed|failed|pass\s+rate|fail\s+rate|row\s+counts?|"
+    r"number\s+of"
     r")\b",
     re.IGNORECASE,
 )
@@ -43,10 +45,9 @@ _DIRECT_PATTERNS = re.compile(
 
 def classify_response_mode(question: str) -> ResponseMode:
     """
-    Choose answer length from the user question.
-
-    Detailed only when explicitly requested. Standard for known analytical asks.
-    Everything else defaults to Direct (simple factual).
+    Simple factual → Direct (one sentence)
+    Business / catalog → Standard (structured)
+    Deep analytical / reasoning → Detailed (summary + recommendations)
     """
     cleaned = question.strip()
     if not cleaned:
@@ -61,8 +62,7 @@ def classify_response_mode(question: str) -> ResponseMode:
     if _DIRECT_PATTERNS.search(cleaned):
         return ResponseMode.DIRECT
 
-    # Short questions default to direct; longer open asks → standard
-    if len(cleaned.split()) <= 12:
+    if len(cleaned.split()) <= 10:
         return ResponseMode.DIRECT
 
     return ResponseMode.STANDARD

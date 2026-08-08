@@ -167,3 +167,20 @@ export function saveDeveloperMode(enabled: boolean): void {
   localStorage.setItem(DEVELOPER_MODE_STORAGE_KEY, enabled ? "1" : "0");
   window.dispatchEvent(new Event(DEVELOPER_MODE_CHANGED_EVENT));
 }
+
+export function clearPowerBiUrl(): void {
+  localStorage.removeItem(POWER_BI_STORAGE_KEY);
+}
+
+/** Clear SQL session and chats on disconnect. */
+export function clearWorkspaceOnDisconnect(options?: { clearPowerBi?: boolean }): void {
+  const sessionId = getSqlSessionId();
+  if (sessionId) {
+    clearChat(chatStorageKeyForSession(sessionId));
+  }
+  clearAllChats();
+  clearSqlSession();
+  if (options?.clearPowerBi) {
+    clearPowerBiUrl();
+  }
+}

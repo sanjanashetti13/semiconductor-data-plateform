@@ -33,7 +33,6 @@ from ai.sql_agent.planner import MetadataIntent, Plan, QuestionCategory, classif
 from ai.sql_agent.profiler import (
     ProfileBuildError,
     ensure_profile,
-    profile_to_text,
 )
 from ai.sql_agent.metadata_reasoning import (
     follow_ups_for_metadata,
@@ -51,11 +50,13 @@ from ai.sql_agent.metadata_reasoning import (
 from ai.sql_agent.context import resolve_contextual_question
 from ai.sql_agent.followups import dynamic_follow_ups
 from ai.sql_agent.prompts import (
+    BUSINESS_REASONING_SYSTEM,
     DB_UNDERSTANDING_SYSTEM,
     KNOWLEDGE_ANSWER_SYSTEM,
     SQL_GENERATION_SYSTEM,
     SQL_RETRY_SYSTEM,
     build_knowledge_user_prompt,
+    build_reasoning_user_prompt,
     build_sql_explain_user_prompt,
     build_sql_generation_user_prompt,
     build_sql_retry_user_prompt,
@@ -278,16 +279,27 @@ def _handle_metadata(session_id: str, config, plan: Plan, started: float) -> dic
                     sql_used = result.sql
                     row_count = len(rows)
         elif intent in (MetadataIntent.LIST_TABLES, MetadataIntent.EXPLAIN_ALL):
-            answer = format_explain_tables(
-                profile,
-                include_views=(intent == MetadataIntent.EXPLAIN_ALL),
-            )
-            row_count = profile.table_count + (
-                profile.view_count if intent == MetadataIntent.EXPLAIN_ALL else 0
-            )
+            if intent == MetadataIntent.EXPLAIN_ALL:
+                from ai.sql_agent.schema_knowledge import (
+                    build_schema_knowledge,
+                    format_full_object_catalog,
+                )
+
+                model = build_schema_knowledge(profile)
+                answer = format_full_object_catalog(model)
+                row_count = model.object_count
+            else:
+                answer = format_explain_tables(profile, include_views=False)
+                row_count = profile.table_count
         elif intent == MetadataIntent.DESCRIBE_SCHEMA:
-            answer = format_explain_tables(profile, include_views=True)
-            row_count = profile.table_count + profile.view_count
+            from ai.sql_agent.schema_knowledge import (
+                build_schema_knowledge,
+                format_full_object_catalog,
+            )
+
+            model = build_schema_knowledge(profile)
+            answer = format_full_object_catalog(model)
+            row_count = model.object_count
         elif intent == MetadataIntent.LIST_VIEWS:
             answer = format_views_catalog(profile)
             row_count = profile.view_count
@@ -342,10 +354,16 @@ def _handle_metadata(session_id: str, config, plan: Plan, started: float) -> dic
 
 
 def _handle_understanding(session_id: str, config, started: float) -> dict:
-    """Business understanding — NEVER generate SQL; use cached semantic profile."""
+    """Whole-database business understanding — full knowledge model, no SQL."""
     try:
+        from ai.sql_agent.schema_knowledge import (
+            build_schema_knowledge,
+            knowledge_model_to_text,
+        )
+
         profile = ensure_profile(session_id, config)
-        evidence = profile_to_text(profile)
+        model = build_schema_knowledge(profile)
+        evidence = knowledge_model_to_text(model)
         summary = chat(
             [
                 {"role": "system", "content": DB_UNDERSTANDING_SYSTEM},
@@ -359,12 +377,14 @@ def _handle_understanding(session_id: str, config, started: float) -> dict:
             config_database=config.database,
             category=QuestionCategory.BUSINESS_UNDERSTANDING,
             sql=None,
-            row_count=profile.table_count + profile.view_count,
-            validation_result="semantic profile → business narrative (no SQL)",
+            row_count=model.object_count,
+            validation_result=(
+                f"schema knowledge model · {model.object_count} objects · no SQL"
+            ),
             execution_time=round(time.perf_counter() - started, 2),
             follow_ups=dynamic_follow_ups(
                 category=QuestionCategory.BUSINESS_UNDERSTANDING,
-                question="What is this dataset about?",
+                question="What is this database used for?",
                 profile=profile,
                 answer=answer,
             )
@@ -389,18 +409,90 @@ def _handle_understanding(session_id: str, config, started: float) -> dict:
         )
 
 
-def _handle_schema(session_id: str, config, plan: Plan, started: float) -> dict:
-    """Schema / explain-every-table — profile catalog, no free-form SQL."""
+def _handle_reasoning(session_id: str, config, plan: Plan, started: float) -> dict:
+    """Business reasoning from schema knowledge — never KPI-only, never SQL."""
     try:
+        from ai.sql_agent.schema_knowledge import (
+            build_schema_knowledge,
+            knowledge_model_to_text,
+        )
+
         profile = ensure_profile(session_id, config)
-        answer = format_explain_tables(profile, include_views=True)
+        model = build_schema_knowledge(profile)
+        evidence = knowledge_model_to_text(model)
+        narrative = chat(
+            [
+                {"role": "system", "content": BUSINESS_REASONING_SYSTEM},
+                {
+                    "role": "user",
+                    "content": build_reasoning_user_prompt(plan.question, evidence),
+                },
+            ],
+            temperature=0.25,
+        )
+        answer = narrative.strip()
+        return _base_response(
+            answer=answer,
+            config_database=config.database,
+            category=QuestionCategory.BUSINESS_REASONING,
+            sql=None,
+            row_count=model.object_count,
+            validation_result=(
+                f"business reasoning · knowledge model ({model.object_count} objects) · no SQL"
+            ),
+            execution_time=round(time.perf_counter() - started, 2),
+            follow_ups=dynamic_follow_ups(
+                category=QuestionCategory.BUSINESS_REASONING,
+                question=plan.question,
+                profile=profile,
+                answer=answer,
+            )
+            or [
+                "How many failed wafers?",
+                "What is the overall yield?",
+                "Explain every table",
+                "Show sample rows",
+            ],
+        )
+    except ProfileBuildError:
+        return _base_response(
+            answer=FRIENDLY_PROFILE_ERROR,
+            config_database=config.database,
+            category=QuestionCategory.BUSINESS_REASONING,
+            validation_result="profile unavailable",
+            execution_time=round(time.perf_counter() - started, 2),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Business reasoning failed")
+        return _base_response(
+            answer=sanitize_user_message(str(exc), fallback=FRIENDLY_QUERY_ERROR),
+            config_database=config.database,
+            category=QuestionCategory.BUSINESS_REASONING,
+            validation_result="failed (reasoning)",
+            execution_time=round(time.perf_counter() - started, 2),
+        )
+
+
+def _handle_schema(session_id: str, config, plan: Plan, started: float) -> dict:
+    """Explain EVERY table and view from the schema knowledge model."""
+    try:
+        from ai.sql_agent.schema_knowledge import (
+            build_schema_knowledge,
+            format_full_object_catalog,
+        )
+
+        profile = ensure_profile(session_id, config)
+        model = build_schema_knowledge(profile)
+        answer = format_full_object_catalog(model)
         return _base_response(
             answer=answer,
             config_database=config.database,
             category=QuestionCategory.SCHEMA,
             sql=None,
-            row_count=profile.table_count + profile.view_count,
-            validation_result="semantic catalog · explain all objects",
+            row_count=model.object_count,
+            validation_result=(
+                f"full object catalog · {model.object_count} tables/views · no SQL"
+            ),
             execution_time=round(time.perf_counter() - started, 2),
             follow_ups=dynamic_follow_ups(
                 category=QuestionCategory.SCHEMA,
@@ -772,6 +864,7 @@ def ask_sql_agent(
             QuestionCategory.METADATA,
             QuestionCategory.SCHEMA,
             QuestionCategory.BUSINESS_UNDERSTANDING,
+            QuestionCategory.BUSINESS_REASONING,
             QuestionCategory.KNOWLEDGE,
             QuestionCategory.SMALLTALK,
         )
@@ -812,6 +905,9 @@ def ask_sql_agent(
 
     if plan.category == QuestionCategory.METADATA:
         return _handle_metadata(session_id, config, plan, started)
+
+    if plan.category == QuestionCategory.BUSINESS_REASONING:
+        return _handle_reasoning(session_id, config, plan, started)
 
     if plan.category in (
         QuestionCategory.BUSINESS_UNDERSTANDING,

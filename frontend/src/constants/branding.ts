@@ -22,10 +22,10 @@ export const SEMICONDUCTOR_CHIPS = [
 ] as const;
 
 export const GENERIC_SQL_CHIPS = [
-  { label: "Dataset Overview", prompt: "What is this dataset about?" },
+  { label: "Dataset Overview", prompt: "What is this database used for?" },
   { label: "Explain Tables", prompt: "Explain every table." },
-  { label: "Production KPIs", prompt: "How many passed wafers?" },
-  { label: "Sample Rows", prompt: "Show sample rows." },
+  { label: "Yield Drivers", prompt: "What influences manufacturing yield?" },
+  { label: "Passed Wafers", prompt: "How many passed wafers?" },
 ] as const;
 
 export const SEMICONDUCTOR_ERROR_SUGGESTIONS = [

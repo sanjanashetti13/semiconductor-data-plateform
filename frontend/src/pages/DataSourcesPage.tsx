@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import {
   chatStorageKeyForSession,
   clearChat,
-  clearSqlSession,
+  clearWorkspaceOnDisconnect,
   loadAzureSqlConfig,
   loadSqlSession,
   loadTheme,
@@ -103,7 +103,14 @@ export function DataSourcesPage() {
       setPreview(result.schema_preview);
 
       if (thenOpenCopilot) {
-        toast.success(`Connected · Generic SQL Mode · ${result.database}`);
+        const semi =
+          /fact_sensor_readings/i.test(result.schema_preview) ||
+          /vw_manufacturing_summary/i.test(result.schema_preview);
+        toast.success(
+          semi
+            ? `Connected · Semiconductor Mode · ${result.database}`
+            : `Connected · Generic SQL Mode · ${result.database}`,
+        );
         navigate("/copilot");
       } else {
         toast.success(
@@ -134,12 +141,12 @@ export function DataSourcesPage() {
       } catch {
         // clear locally anyway
       }
-      clearChat(chatStorageKeyForSession(active.sessionId));
     }
-    clearSqlSession();
+    clearWorkspaceOnDisconnect();
+    setForm((prev) => ({ ...prev, password: "" }));
     setSession(null);
     setPreview("");
-    toast.message("Disconnected · Configure a data source before using AI Copilot.");
+    toast.message("Disconnected. Configure Azure SQL before using AI Copilot.");
   }
 
   return (
@@ -149,10 +156,11 @@ export function DataSourcesPage() {
       onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
     >
       <div className="mx-auto w-full max-w-2xl px-4 py-10">
-        <h1 className="text-2xl font-semibold text-zinc-50">Data Sources</h1>
+        <h1 className="text-2xl font-semibold text-zinc-50">Database Connection</h1>
         <p className="mt-2 text-sm text-zinc-400">
-          Connect any Azure SQL database to switch AI Copilot into Generic SQL Mode.
-          Credentials stay in server memory for this session only.
+          Connect any Azure SQL database. Credentials are held in server memory for this
+          session only and are removed on Disconnect. Semiconductor warehouses are detected
+          automatically for domain-aware analytics.
         </p>
 
         <div className="mt-6 grid gap-3 rounded-2xl border border-cyan-400/25 bg-[#07111f]/70 p-5 shadow-[0_0_28px_rgba(34,211,238,0.08)] backdrop-blur-md">
@@ -217,7 +225,11 @@ export function DataSourcesPage() {
             <dl className="mt-3 grid gap-2 text-sm text-zinc-400 sm:grid-cols-2">
               <div>
                 <dt className="text-xs text-zinc-500">Operating Mode</dt>
-                <dd className="text-zinc-300">Generic SQL Mode</dd>
+                <dd className="text-zinc-300">
+                  {/fact_sensor_readings|vw_manufacturing_summary/i.test(preview)
+                    ? "Semiconductor Mode"
+                    : "Generic SQL Mode"}
+                </dd>
               </div>
               <div>
                 <dt className="text-xs text-zinc-500">Connection Status</dt>

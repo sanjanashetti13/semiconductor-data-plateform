@@ -24,9 +24,9 @@ interface AppShellProps {
 
 const NAV_ITEMS = [
   { to: "/copilot", label: "AI Copilot", icon: MessageSquare },
-  { to: "/data-sources", label: "Data Sources", icon: Database },
+  { to: "/data-sources", label: "Database Connection", icon: Database },
   { to: "/power-bi", label: "Power BI", icon: LayoutDashboard },
-  { to: "/architecture", label: "Platform Architecture", icon: Workflow },
+  { to: "/architecture", label: "Architecture", icon: Workflow },
 ] as const;
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
