@@ -1,23 +1,13 @@
 # Build React (Vite) + deploy FastAPI to Azure App Service (Linux, Python 3.11).
-# No Docker. Frontend is built into frontend/dist and served by backend.main:app.
+# Frontend builds to frontend/dist; FastAPI (backend.main:app) serves it.
+# Secrets stay in App Service Application Settings — never in Vite or this repo.
 #
-# Required GitHub secrets (Azure Deployment Center / federated credentials — OIDC):
-#   AZUREAPPSERVICE_CLIENTID_<suffix>
-#   AZUREAPPSERVICE_TENANTID_<suffix>
-#   AZUREAPPSERVICE_SUBSCRIPTIONID_<suffix>
-# Replace the secret names below with the exact names Azure created in your repo
-# (keep the azure/login inputs as client-id / tenant-id / subscription-id).
+# GitHub OIDC secrets (existing):
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
 #
-# Required GitHub variable (or edit env.AZURE_WEBAPP_NAME below):
-#   AZURE_WEBAPP_NAME = your App Service name
-#
-# App Service Application Settings (Configuration → Application settings):
-#   APP_ENV=production
-#   GROQ_API_KEY=...
-#   SQL_SERVER=...
-#   SQL_DATABASE=...
-#   SQL_USERNAME=...
-#   SQL_PASSWORD=...
+# App Service Application Settings (portal only — not in Actions):
+#   APP_ENV=production, GROQ_API_KEY, SQL_SERVER, SQL_DATABASE,
+#   SQL_USERNAME, SQL_PASSWORD
 # Startup Command: bash startup.sh
 
 name: Deploy to Azure App Service
@@ -31,8 +21,7 @@ on:
 env:
   PYTHON_VERSION: "3.11"
   NODE_VERSION: "20"
-  # Override via repo variable AZURE_WEBAPP_NAME if set.
-  AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
+  AZURE_WEBAPP_NAME: semiconductor-ai-sanjana
 
 permissions:
   contents: read
@@ -57,36 +46,123 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install frontend dependencies
+      - name: Check package.json / package-lock.json sync
         working-directory: frontend
-        run: npm ci
-
-      - name: Build frontend (production)
-        working-directory: frontend
-        # Empty VITE_API_BASE_URL → same-origin /api/... (never bake secrets into the bundle)
-        env:
-          VITE_API_BASE_URL: ""
-        run: npm run build
-
-      - name: Verify frontend/dist/index.html
-        run: |
-          test -f frontend/dist/index.html
-          echo "frontend/dist/index.html OK"
-
-      - name: Create virtual environment and install Python dependencies
-        run: |
-          python -m venv antenv
-          source antenv/bin/activate
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Assemble deployment package
         run: |
           set -euo pipefail
+          echo "::group::Lockfile sync check"
+          python <<'PY'
+          import json
+          from pathlib import Path
+
+          pkg = json.loads(Path("package.json").read_text(encoding="utf-8"))
+          lock = json.loads(Path("package-lock.json").read_text(encoding="utf-8"))
+          root = lock.get("packages", {}).get("", {})
+          issues = []
+
+          if pkg.get("name") != lock.get("name"):
+              issues.append(f"top-level name: package.json={pkg.get('name')} lock={lock.get('name')}")
+          if pkg.get("version") != lock.get("version"):
+              issues.append(
+                  f"top-level version: package.json={pkg.get('version')} lock={lock.get('version')}"
+              )
+          if pkg.get("name") != root.get("name"):
+              issues.append(
+                  f"packages[''].name: package.json={pkg.get('name')} lock={root.get('name')}"
+              )
+          if pkg.get("version") != root.get("version"):
+              issues.append(
+                  f"packages[''].version: package.json={pkg.get('version')} lock={root.get('version')}"
+              )
+
+          for section in ("dependencies", "devDependencies"):
+              a = pkg.get(section) or {}
+              b = root.get(section) or {}
+              for key in sorted(set(a) | set(b)):
+                  if a.get(key) != b.get(key):
+                      issues.append(
+                          f"{section}.{key}: package.json={a.get(key)} lock={b.get(key)}"
+                      )
+
+          if issues:
+              print("package.json and package-lock.json are out of sync:")
+              for issue in issues:
+                  print(f" - {issue}")
+              raise SystemExit(1)
+
+          print("package.json and package-lock.json are in sync.")
+          PY
+          echo "::endgroup::"
+
+      - name: Install frontend dependencies (npm ci)
+        id: npm_ci
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          echo "::group::npm ci"
+          npm ci
+          echo "::endgroup::"
+
+      - name: Build frontend (production)
+        id: npm_build
+        working-directory: frontend
+        env:
+          # Same-origin /api/... — never bake secrets into the client bundle
+          VITE_API_BASE_URL: ""
+        run: |
+          set -euo pipefail
+          echo "::group::npm run build"
+          npm run build
+          echo "::endgroup::"
+
+      - name: Verify frontend/dist/index.html
+        id: verify_dist
+        run: |
+          set -euo pipefail
+          echo "::group::Verify frontend dist"
+          if [[ ! -f frontend/dist/index.html ]]; then
+            echo "ERROR: frontend/dist/index.html is missing after build."
+            ls -la frontend/dist || true
+            exit 1
+          fi
+          echo "frontend/dist/index.html OK"
+          ls -la frontend/dist
+          echo "::endgroup::"
+
+      - name: Validate Python requirements (syntax / import surface)
+        id: pip_check
+        run: |
+          set -euo pipefail
+          echo "::group::Python requirements check"
+          python -m pip install --upgrade pip
+          # Do NOT build antenv here — Azure App Service Oryx installs requirements.txt.
+          # Only validate that requirements parse; avoid compiling pyodbc on the runner
+          # (needs unixodbc-dev and is unnecessary when Oryx installs on App Service).
+          python - <<'PY'
+          from pathlib import Path
+          text = Path("requirements.txt").read_text(encoding="utf-8")
+          reqs = [
+              line.strip()
+              for line in text.splitlines()
+              if line.strip() and not line.strip().startswith("#")
+          ]
+          print("requirements.txt entries:")
+          for req in reqs:
+              print(f"  - {req}")
+          if not reqs:
+              raise SystemExit("requirements.txt has no installable entries")
+          print("OK")
+          PY
+          echo "::endgroup::"
+
+      - name: Assemble deployment package
+        id: package
+        run: |
+          set -euo pipefail
+          echo "::group::Assemble package"
           rm -rf _publish
           mkdir -p _publish/frontend
 
-          # Runtime application code
           cp -a backend _publish/backend
           cp -a ai _publish/ai
           cp -a frontend/dist _publish/frontend/dist
@@ -94,25 +170,24 @@ jobs:
           cp startup.sh _publish/startup.sh
           cp runtime.txt _publish/runtime.txt
 
-          # Azure App Service Linux expects antenv at site root when pre-built
-          cp -a antenv _publish/antenv
-
-          # Drop caches / secrets / local junk from the package
-          find _publish -type d -name '__pycache__' -prune -exec rm -rf {} +
-          find _publish -type d -name '.pytest_cache' -prune -exec rm -rf {} +
+          # Strip bytecode / local junk (never ship secrets)
+          find _publish -type d -name '__pycache__' -print0 | xargs -0 -r rm -rf
+          find _publish -type d -name '.pytest_cache' -print0 | xargs -0 -r rm -rf
           find _publish -name '*.pyc' -delete
-          rm -rf _publish/backend/static _publish/public || true
-          rm -f _publish/.env _publish/**/.env || true
+          rm -rf _publish/backend/static || true
+          find _publish -name '.env' -type f -print0 | xargs -0 -r rm -f
 
-          # Sanity checks
           test -f _publish/frontend/dist/index.html
           test -f _publish/startup.sh
           test -f _publish/requirements.txt
           test -d _publish/backend
           test -d _publish/ai
-          test -d _publish/antenv
-          echo "Package contents:"
-          find _publish -maxdepth 3 -type f | head -n 80
+          test ! -e _publish/antenv
+          test ! -e _publish/.env
+
+          echo "Package tree (depth 3):"
+          find _publish -maxdepth 3 \( -type f -o -type d \) | sort | head -n 120
+          echo "::endgroup::"
 
       - name: Upload artifact for deployment
         uses: actions/upload-artifact@v4
@@ -132,16 +207,6 @@ jobs:
       url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
 
     steps:
-      - name: Resolve App Service name
-        id: appname
-        run: |
-          NAME="${{ env.AZURE_WEBAPP_NAME }}"
-          if [ -z "$NAME" ]; then
-            echo "Set repository variable AZURE_WEBAPP_NAME to your Azure App Service name."
-            exit 1
-          fi
-          echo "name=$NAME" >> "$GITHUB_OUTPUT"
-
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
@@ -151,9 +216,6 @@ jobs:
       - name: Login to Azure (OIDC)
         uses: azure/login@v2
         with:
-          # IMPORTANT: Replace these secret names with the exact Azure-generated
-          # names from your repo (Settings → Secrets). Keep the input keys as:
-          # client-id / tenant-id / subscription-id.
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
@@ -162,5 +224,6 @@ jobs:
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
         with:
-          app-name: ${{ steps.appname.outputs.name }}
+          app-name: semiconductor-ai-sanjana
+          slot-name: Production
           package: _publish

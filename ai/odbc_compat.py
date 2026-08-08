@@ -36,8 +36,8 @@ def get_pyodbc():
     except Exception as exc:  # noqa: BLE001
         _PYODBC_ERROR = (
             "Azure SQL connectivity is not available in this hosting environment "
-            "(ODBC driver / pyodbc missing). Deploy the API on Azure App Service "
-            "with ODBC Driver 18 installed, or run the backend locally."
+            "(ODBC driver / pyodbc missing). On Azure App Service, ensure "
+            "ODBC Driver 18 for SQL Server is installed, or run the backend locally."
         )
         raise OdbcUnavailableError(_PYODBC_ERROR) from exc
 

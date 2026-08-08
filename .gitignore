@@ -18,6 +18,7 @@ build/
 venv/
 env/
 ENV/
+antenv/
 
 # Environment & secrets
 .env
@@ -94,6 +95,7 @@ ai/generated/*
 *.bak
 
 # Frontend
+node_modules/
 frontend/node_modules/
 frontend/dist/
 frontend/.env.local
@@ -103,6 +105,8 @@ frontend/.vite/
 public/
 backend/static/
 
+# CI publish staging
+_publish/
+
 # Docker
 *.pid
-

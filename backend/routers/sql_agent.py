@@ -73,8 +73,8 @@ def connect_database(payload: SqlConnectRequest) -> SqlConnectResponse:
             detail={
                 "message": str(exc),
                 "suggestions": [
-                    "Run the API locally or on Azure App Service / Render / Railway",
-                    "Confirm GROQ_API_KEY is set for chat features",
+                    "Deploy on Azure App Service with ODBC Driver 18, or run the API locally",
+                    "Confirm App Service has ODBC Driver 18 for SQL Server installed",
                 ],
             },
         ) from exc
