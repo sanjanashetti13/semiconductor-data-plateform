@@ -12,8 +12,7 @@ dependencies = [
 ]
 
 [tool.vercel]
-# Root app.py is a CLI — FastAPI lives here:
 entrypoint = "backend.main:app"
 
 [tool.vercel.scripts]
-build = "bash scripts/vercel_build.sh"
+build = "python scripts/vercel_build.py"

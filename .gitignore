@@ -94,6 +94,7 @@ frontend/.vite/
 
 # Vercel static export (generated at build)
 public/
+backend/static/
 
 # Docker
 *.pid
