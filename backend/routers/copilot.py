@@ -187,9 +187,13 @@ def chat(payload: ChatRequest) -> ChatResponse:
     try:
         orch = run_orchestrator(question, history=history_payload)
     except ValueError as exc:
+        logger.warning("Copilot configuration/value error: %s", type(exc).__name__)
         raise HTTPException(
             status_code=400,
-            detail={"message": str(exc), "suggestions": ERROR_SUGGESTIONS},
+            detail={
+                "message": "Unable to process that request. Check configuration and try again.",
+                "suggestions": ERROR_SUGGESTIONS,
+            },
         ) from exc
     except Exception as exc:  # noqa: BLE001
         logger.exception("Copilot chat failed")

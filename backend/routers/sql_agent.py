@@ -99,7 +99,7 @@ def connect_database(payload: SqlConnectRequest) -> SqlConnectResponse:
         raise HTTPException(
             status_code=400,
             detail={
-                "message": str(exc) or FRIENDLY_PROFILE_ERROR,
+                "message": FRIENDLY_PROFILE_ERROR,
                 "suggestions": ERROR_SUGGESTIONS,
             },
         ) from exc
@@ -222,7 +222,7 @@ def sql_agent_chat(payload: SqlAgentChatRequest) -> SqlAgentChatResponse:
         logger.exception("Profile required but failed during chat")
         raise HTTPException(
             status_code=400,
-            detail={"message": str(exc) or FRIENDLY_PROFILE_ERROR, "suggestions": ERROR_SUGGESTIONS},
+            detail={"message": FRIENDLY_PROFILE_ERROR, "suggestions": ERROR_SUGGESTIONS},
         ) from exc
     except Exception as exc:  # noqa: BLE001
         logger.exception("SQL Agent chat failed")

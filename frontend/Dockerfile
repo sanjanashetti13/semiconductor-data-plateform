@@ -5,7 +5,7 @@ WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
-ARG VITE_API_BASE_URL=http://localhost:8000
+ARG VITE_API_BASE_URL=
 ARG VITE_POWERBI_EMBED_URL=
 ARG VITE_POWERBI_URL=https://app.powerbi.com/
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL \

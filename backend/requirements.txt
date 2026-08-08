@@ -1,4 +1,4 @@
-# FastAPI service for the AI Manufacturing Copilot
+# FastAPI service — keep in sync with root requirements.txt for App Service
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
 pydantic>=2.0.0

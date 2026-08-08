@@ -72,7 +72,7 @@ python -m venv .venv
 source .venv/bin/activate
 
 pip install -r requirements.txt
-pip install -r backend/requirements.txt
+# Optional local ETL stack: pip install -r requirements-etl.txt
 cp .env.example .env
 # Edit .env — at minimum set GROQ_API_KEY
 
@@ -102,69 +102,69 @@ Copy `.env.example` → `.env`. **Never commit `.env`.**
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `GROQ_API_KEY` | Yes | LLM access |
+| `GROQ_API_KEY` | Yes | LLM access (backend only) |
 | `GROQ_MODEL` | No | Default `llama-3.3-70b-versatile` |
-| `AZURE_SQL_SERVER` | Mode 1 only | Curated manufacturing warehouse |
-| `AZURE_SQL_DATABASE` | Mode 1 only | Warehouse database name |
-| `AZURE_SQL_USERNAME` | Mode 1 only | SQL login |
-| `AZURE_SQL_PASSWORD` | Mode 1 only | SQL password |
-| `CORS_ORIGINS` | No | Comma-separated allowed origins |
-| `VITE_API_BASE_URL` | No | Frontend API base (empty = same origin / proxy) |
-| `VITE_POWERBI_URL` | No | Optional default Power BI URL (still overridable in UI) |
+| `SQL_SERVER` / `AZURE_SQL_SERVER` | Mode 1 | Curated warehouse host |
+| `SQL_DATABASE` / `AZURE_SQL_DATABASE` | Mode 1 | Database name |
+| `SQL_USERNAME` / `AZURE_SQL_USERNAME` | Mode 1 | SQL login |
+| `SQL_PASSWORD` / `AZURE_SQL_PASSWORD` | Mode 1 | SQL password |
+| `CORS_ORIGINS` | No | Dev localhost list; leave empty for same-origin production |
+| `POWERBI_URL` | No | Ops hint only — users configure URL in the UI |
+| `VITE_API_BASE_URL` | No | Leave empty for same-origin `/api` |
+| `VITE_POWERBI_URL` | No | Optional public default Power BI URL (no secrets) |
 
 **Security rules**
 
-- No secrets in frontend JavaScript except non-sensitive public URLs
-- Generic Mode passwords are **never** written to disk; they live in server memory for the active session only
+- Never put `GROQ_API_KEY` or SQL credentials in `VITE_*` variables
+- Generic Mode passwords are **never** written to disk; server memory for the active session only
 - Browser may remember Server / Database / Username (not password)
+- Production API responses never include stack traces or raw ODBC/SQL Server errors
 
 ---
 
 ## Deployment Guide
 
-### Vercel (UI + API)
+### Azure App Service (recommended — one URL, no Docker)
 
-This monorepo deploys on Vercel as:
-
-1. **Static UI** — `frontend` built into `public/`
-2. **FastAPI** — `backend.main:app` for `/api/*`
-
-`pyproject.toml` sets `entrypoint = "backend.main:app"`.  
-`scripts/vercel_build.sh` builds the React app into `public/`.
-
-**Required Vercel env vars**
-
-- `GROQ_API_KEY`
-- `CORS_ORIGINS` — include `https://your-app.vercel.app` (or `*`)
-
-**Azure SQL on Vercel**
-
-Vercel’s Python runtime does **not** include Microsoft ODBC drivers.  
-Database Connection will return a clear 503 on that host.
-
-For full Azure SQL:
-
-- Run API on **Azure App Service / Render / Railway** with `backend/requirements.txt` (includes `pyodbc`), **or**
-- Run `uvicorn` locally and point `VITE_API_BASE_URL` at that API
-
-### Docker Compose (local / VM)
-
-```bash
-cp .env.example .env
-# set GROQ_API_KEY and optional AZURE_SQL_*
-docker compose up --build
+```
+Browser → https://<app-name>.azurewebsites.net
+              ├── /api/*   → FastAPI (Groq, Azure SQL via pyodbc)
+              └── /*       → React (frontend/dist)
 ```
 
-### Azure App Service / Render / Railway (API)
+**Local production smoke test**
 
-- Deploy the Python API (`uvicorn backend.main:app --host 0.0.0.0 --port $PORT`)
-- Set env vars in the host secret store (`GROQ_API_KEY`, `CORS_ORIGINS`, optional `AZURE_SQL_*`)
-- Do **not** bake `.env` into the image
+```bash
+cd frontend && npm ci && npm run build && cd ..
+# Windows PowerShell
+$env:APP_ENV="production"
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+```
 
-### Vercel / Static host (frontend)
+- UI: `http://127.0.0.1:8000/`
+- Health: `http://127.0.0.1:8000/api/health` → `{"status":"healthy"}`
 
-- Build `frontend` with `VITE_API_BASE_URL` pointing at your API
-- Never put `GROQ_API_KEY` or SQL passwords in `VITE_*` variables
+**App Service**
+
+| Setting | Value |
+|---------|--------|
+| OS | Linux |
+| Stack | Python 3.11+ |
+| Startup Command | `bash startup.sh` or `python -m uvicorn backend.main:app --host 0.0.0.0 --port $PORT` |
+
+Build the frontend during deploy (`cd frontend && npm ci && npm run build`) so `frontend/dist/index.html` exists on the worker.
+
+**Required App Settings:** `GROQ_API_KEY`, `APP_ENV=production`, and for Semiconductor Mode `SQL_SERVER`, `SQL_DATABASE`, `SQL_USERNAME`, `SQL_PASSWORD`.
+
+**ODBC Driver 18:** logged at startup. Optional operator endpoint `/api/diagnostics/odbc` when `ENABLE_DIAGNOSTICS=true` (disable afterward).
+
+### Local development (two processes)
+
+Vite on `:5173` proxies `/api` → FastAPI on `:8000`. See **How to Run** above.
+
+### Optional: Vercel / Docker
+
+See `docs/Deployment.md`. Vercel Python runtimes do not include ODBC Driver 18.
 
 ---
 

@@ -5,6 +5,8 @@ import type {
   DatasetInfo,
 } from "@/types";
 
+// Empty in production so the browser calls same-origin /api/... on App Service.
+// Local Vite proxies /api → the FastAPI process (see vite.config.ts).
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
 export class ApiError extends Error {
