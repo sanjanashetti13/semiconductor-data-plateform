@@ -39,6 +39,7 @@ from ai.sql_agent.metadata_reasoning import (
     follow_ups_for_metadata,
     follow_ups_for_understanding,
     format_columns_for_table,
+    format_explain_tables,
     format_keys,
     format_row_counts,
     format_sample_answer,
@@ -47,6 +48,8 @@ from ai.sql_agent.metadata_reasoning import (
     pick_primary_fact_table,
     resolve_table,
 )
+from ai.sql_agent.context import resolve_contextual_question
+from ai.sql_agent.followups import dynamic_follow_ups
 from ai.sql_agent.prompts import (
     DB_UNDERSTANDING_SYSTEM,
     KNOWLEDGE_ANSWER_SYSTEM,
@@ -81,6 +84,20 @@ from ai.sql_agent.templates import sql_sample_rows
 from ai.sql_agent.validator import UnsafeSqlError, validate_select_only
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_validation(text: str) -> str:
+    """Developer-facing status — never raw ODBC dumps."""
+    from ai.sql_agent.errors import looks_like_raw_db_error
+
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return "n/a"
+    if looks_like_raw_db_error(cleaned):
+        return "failed (see server logs)"
+    if len(cleaned) > 220:
+        return cleaned[:217] + "..."
+    return cleaned
 
 
 def _extract_json(text: str) -> dict:
@@ -123,7 +140,7 @@ def _base_response(
         "tool_label": "Generic SQL Agent",
         "category": category.value,
         "router_decision": category.value,
-        "validation_result": validation_result,
+        "validation_result": _safe_validation(validation_result),
         "execution_time": execution_time,
         "follow_ups": follow_ups if follow_ups is not None else follow_ups_for(category),
     }

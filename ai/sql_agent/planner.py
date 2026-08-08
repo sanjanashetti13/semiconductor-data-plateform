@@ -1,7 +1,7 @@
 """Question classification for the planning-based SQL Agent.
 
 Pipeline step 1: Intent Classification (WHAT)
-  KPI | Metadata | Analytical | Knowledge | Smalltalk
+  KPI | Metadata | Schema | Business Understanding | Analytical | Knowledge | Smalltalk
 """
 
 from __future__ import annotations
@@ -13,7 +13,6 @@ from enum import Enum
 from ai.sql_agent.intent import (
     QuestionIntent,
     classify_intent,
-    is_understanding_question,
 )
 from ai.sql_agent.response_mode import ResponseMode, classify_response_mode
 
@@ -23,11 +22,13 @@ class QuestionCategory(str, Enum):
 
     KPI = "kpi"
     METADATA = "metadata"
+    SCHEMA = "schema"
+    BUSINESS_UNDERSTANDING = "business_understanding"
     ANALYTICAL = "analytical"
     KNOWLEDGE = "knowledge"
-    DATABASE_UNDERSTANDING = "database_understanding"
     SMALLTALK = "smalltalk"
-    # Backward-compatible alias used in older responses / docs
+    # Aliases for older call sites / API consumers
+    DATABASE_UNDERSTANDING = "business_understanding"
     DATA_ANALYSIS = "analytical"
 
 
@@ -36,6 +37,7 @@ class MetadataIntent(str, Enum):
     LIST_VIEWS = "list_views"
     LIST_COLUMNS = "list_columns"
     DESCRIBE_SCHEMA = "describe_schema"
+    EXPLAIN_ALL = "explain_all"
     ROW_COUNTS = "row_counts"
     PRIMARY_KEYS = "primary_keys"
     FOREIGN_KEYS = "foreign_keys"
@@ -66,6 +68,14 @@ _META_PATTERNS: list[tuple[MetadataIntent, re.Pattern[str]]] = [
         ),
     ),
     (
+        MetadataIntent.EXPLAIN_ALL,
+        re.compile(
+            r"\b(explain\s+(every|all|each)\s+tables?|describe\s+(every|all|each)\s+tables?|"
+            r"what\s+does\s+each\s+table\s+contain)\b",
+            re.I,
+        ),
+    ),
+    (
         MetadataIntent.LIST_VIEWS,
         re.compile(r"\b(list|show|get)\b.*\bviews?\b|\bviews?\b.*\b(list|show)\b", re.I),
     ),
@@ -75,7 +85,6 @@ _META_PATTERNS: list[tuple[MetadataIntent, re.Pattern[str]]] = [
             r"\b(list|show|get)\b.*\btables?\b|"
             r"\btables?\b.*\b(list|show|exist|available)\b|"
             r"\bwhat\s+tables?\b|"
-            r"\bwhat\s+does\s+each\s+table\s+contain\b|"
             r"\btables?\s+exist\b|"
             r"\bwhich\s+tables?\b",
             re.I,
@@ -127,6 +136,9 @@ _STOP_TABLE_TOKENS = {
     "purpose",
     "columns",
     "rows",
+    "every",
+    "all",
+    "each",
 }
 
 
@@ -156,16 +168,14 @@ def _metadata_intent_for(question: str) -> MetadataIntent:
 
 
 def classify_question(question: str) -> Plan:
-    """
-    Classify WHAT the user is asking before any SQL generation.
-
-    Intents: KPI | Metadata | Analytical | Knowledge | Smalltalk
-    """
+    """Classify WHAT the user is asking before any SQL generation."""
     cleaned = question.strip()
     if not cleaned:
         raise ValueError("Question cannot be empty.")
 
-    intent = classify_intent(cleaned)
+    # Strip conversation-context appendix before intent match
+    intent_text = cleaned.split("(Conversation context")[0].strip() or cleaned
+    intent = classify_intent(intent_text)
 
     if intent == QuestionIntent.SMALLTALK:
         return Plan(
@@ -188,32 +198,40 @@ def classify_question(question: str) -> Plan:
             category=QuestionCategory.KPI,
             question=cleaned,
             intent=intent,
-            response_mode=classify_response_mode(cleaned),
+            response_mode=classify_response_mode(intent_text),
+        )
+
+    if intent == QuestionIntent.BUSINESS_UNDERSTANDING:
+        return Plan(
+            category=QuestionCategory.BUSINESS_UNDERSTANDING,
+            question=cleaned,
+            intent=intent,
+            response_mode=ResponseMode.STANDARD,
+        )
+
+    if intent == QuestionIntent.SCHEMA:
+        return Plan(
+            category=QuestionCategory.SCHEMA,
+            question=cleaned,
+            intent=intent,
+            metadata_intent=MetadataIntent.EXPLAIN_ALL,
+            response_mode=ResponseMode.STANDARD,
         )
 
     if intent == QuestionIntent.METADATA:
-        # Profile-only narrative for "explain / summarize this database"
-        if is_understanding_question(cleaned):
-            return Plan(
-                category=QuestionCategory.DATABASE_UNDERSTANDING,
-                question=cleaned,
-                intent=intent,
-                response_mode=ResponseMode.STANDARD,
-            )
-        meta = _metadata_intent_for(cleaned)
+        meta = _metadata_intent_for(intent_text)
         return Plan(
             category=QuestionCategory.METADATA,
             question=cleaned,
             intent=intent,
             metadata_intent=meta,
-            target_table=_extract_table(cleaned),
+            target_table=_extract_table(intent_text),
             response_mode=ResponseMode.DIRECT,
         )
 
-    # Analytical (default)
     return Plan(
         category=QuestionCategory.ANALYTICAL,
         question=cleaned,
         intent=intent,
-        response_mode=classify_response_mode(cleaned),
+        response_mode=classify_response_mode(intent_text),
     )

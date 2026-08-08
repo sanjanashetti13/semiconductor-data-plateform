@@ -7,10 +7,12 @@ from enum import Enum
 
 
 class QuestionIntent(str, Enum):
-    """Primary question intents for the Generic SQL Agent."""
+    """Primary question intents for the enterprise SQL analytics assistant."""
 
     KPI = "kpi"
     METADATA = "metadata"
+    SCHEMA = "schema"
+    BUSINESS_UNDERSTANDING = "business_understanding"
     ANALYTICAL = "analytical"
     KNOWLEDGE = "knowledge"
     SMALLTALK = "smalltalk"
@@ -22,25 +24,24 @@ _SMALLTALK = re.compile(
     re.IGNORECASE,
 )
 
-# Domain / conceptual — never SQL
+# Domain / conceptual — never SQL (generic + semiconductor)
 _KNOWLEDGE_PATTERNS = re.compile(
     r"\b("
     r"what\s+is\s+(the\s+)?secom(\s+dataset)?|"
     r"what\s+is\s+a\s+wafer|"
-    r"what\s+(are|is)\s+(a\s+)?(wafer|sensor|yield|die|fab)|"
-    r"explain\s+(semiconductor|wafer|secom|manufacturing|etl|bronze|silver|gold)|"
+    r"what\s+(are|is)\s+a\s+(wafer|sensor|die|fab)\b|"
+    r"explain\s+(semiconductor|wafer|secom|manufacturing|etl|bronze|silver|gold)\b|"
     r"what\s+is\s+semiconductor\s+manufacturing|"
-    r"how\s+does\s+(semiconductor|wafer|yield)|"
-    r"tell\s+me\s+about\s+(secom|wafers?|sensors?|semiconductor\s+manufacturing)|"
-    r"what\s+does\s+(a\s+)?(sensor|wafer)\s+(measure|mean)|"
+    r"how\s+does\s+(semiconductor|wafer)\b|"
+    r"tell\s+me\s+about\s+(secom|wafers?|semiconductor\s+manufacturing)|"
     r"project\s+knowledge|knowledge\s+base|"
     r"what\s+is\s+(bronze|silver|gold)\s+layer|"
-    r"medallion\s+architecture"
+    r"medallion\s+architecture|"
+    r"what\s+does\s+(a\s+)?(sensor|wafer)\s+(measure|mean)"
     r")\b",
     re.IGNORECASE,
 )
 
-# Business KPIs — must use analytical views / aggregated totals
 _KPI_PATTERNS = re.compile(
     r"\b("
     r"how\s+many\s+(passed|failed|pass|fail|wafers?)(\s+wafers?)?|"
@@ -57,16 +58,67 @@ _KPI_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
-# Schema / catalog — profile or metadata templates, not analytical SQL
+# Business meaning of the connected dataset (profile → narrative, no SQL gen)
+_BUSINESS_UNDERSTANDING_PHRASES = (
+    "what does this database contain",
+    "what does the database contain",
+    "what is the dataset about",
+    "what is this dataset about",
+    "what's the dataset about",
+    "what is this data about",
+    "what is the data about",
+    "summarize what this database",
+    "summarize this database",
+    "summarize the database",
+    "summarize this dataset",
+    "summarize the dataset",
+    "explain this database",
+    "explain the database",
+    "explain this dataset",
+    "explain the dataset",
+    "what is this database about",
+    "what is the database about",
+    "database overview",
+    "overview of this database",
+    "overview of the database",
+    "what's in this database",
+    "what is in this database",
+    "describe this database",
+    "describe the database",
+    "describe this dataset",
+    "describe the dataset",
+    "tell me about this database",
+    "tell me about the database",
+    "tell me about this dataset",
+    "tell me about the dataset",
+    "business purpose of this",
+    "what can i analyze",
+    "what insights can i get",
+)
+
+# Schema / catalog structure
+_SCHEMA_PATTERNS = re.compile(
+    r"\b("
+    r"explain\s+(every|all|each)\s+tables?|"
+    r"explain\s+tables?|"
+    r"describe\s+(every|all|each)\s+tables?|"
+    r"what\s+does\s+each\s+table\s+contain|"
+    r"describe\s+(the\s+)?schema|"
+    r"explain\s+(the\s+)?schema|"
+    r"show\s+(the\s+)?schema|"
+    r"schema\s+overview|"
+    r"database\s+schema|"
+    r"table\s+catalog|"
+    r"data\s+dictionary"
+    r")\b",
+    re.IGNORECASE,
+)
+
 _METADATA_PATTERNS = re.compile(
     r"\b("
     r"what\s+tables?\s+exist|list\s+(the\s+)?tables?|show\s+(the\s+)?tables?|"
     r"list\s+(the\s+)?(views?|columns?)|show\s+(the\s+)?(views?|columns?)|"
-    r"describe\s+(the\s+)?(schema|database|dataset|table|view)|"
-    r"explain\s+(this\s+|the\s+)?(schema|database|dataset)|"
-    r"what\s+does\s+(this\s+|the\s+)?database\s+contain|"
-    r"summarize\s+(this\s+|the\s+)?(database|schema|dataset)|"
-    r"database\s+overview|schema\s+overview|"
+    r"describe\s+(the\s+)?(table|view)\b|"
     r"row\s+counts?|primary\s+keys?|foreign\s+keys?|relationships?|"
     r"sample\s+rows?|show\s+sample|preview\s+rows?|"
     r"what\s+columns?|columns?\s+(for|of|in)\b|"
@@ -75,43 +127,22 @@ _METADATA_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
-# Explicit database-understanding phrases (subset of metadata, profile-only path)
-_UNDERSTANDING_PHRASES = (
-    "what does this database contain",
-    "what does the database contain",
-    "what is the dataset about",
-    "what is this dataset about",
-    "what's the dataset about",
-    "what is this data about",
-    "summarize what this database",
-    "summarize this database",
-    "summarize the database",
-    "summarize this schema",
-    "explain this schema",
-    "explain this database",
-    "explain the database",
-    "explain this dataset",
-    "database overview",
-    "what's in this database",
-    "what is in this database",
-    "describe this database",
-    "describe the database",
-    "describe this dataset",
-    "tell me about this database",
-    "tell me about this dataset",
-)
-
 
 def is_understanding_question(question: str) -> bool:
     lower = question.lower().strip()
-    return any(phrase in lower for phrase in _UNDERSTANDING_PHRASES)
+    return any(phrase in lower for phrase in _BUSINESS_UNDERSTANDING_PHRASES)
+
+
+def is_schema_question(question: str) -> bool:
+    return bool(_SCHEMA_PATTERNS.search(question or ""))
 
 
 def classify_intent(question: str) -> QuestionIntent:
     """
     Classify WHAT the user is asking before routing or SQL generation.
 
-    Order: Smalltalk → Knowledge → KPI → Metadata → Analytical (default).
+    Order: Smalltalk → Knowledge → KPI → Business understanding → Schema →
+    Metadata → Analytical.
     """
     cleaned = question.strip()
     if not cleaned:
@@ -123,11 +154,16 @@ def classify_intent(question: str) -> QuestionIntent:
     if _KNOWLEDGE_PATTERNS.search(cleaned):
         return QuestionIntent.KNOWLEDGE
 
-    # KPI before metadata so "yield" / "how many passed" never become catalog asks
     if _KPI_PATTERNS.search(cleaned):
         return QuestionIntent.KPI
 
-    if is_understanding_question(cleaned) or _METADATA_PATTERNS.search(cleaned):
+    if is_understanding_question(cleaned):
+        return QuestionIntent.BUSINESS_UNDERSTANDING
+
+    if is_schema_question(cleaned):
+        return QuestionIntent.SCHEMA
+
+    if _METADATA_PATTERNS.search(cleaned):
         return QuestionIntent.METADATA
 
     return QuestionIntent.ANALYTICAL

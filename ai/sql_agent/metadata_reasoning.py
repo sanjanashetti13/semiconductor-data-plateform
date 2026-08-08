@@ -86,31 +86,50 @@ def format_table_catalog(profile: DatabaseProfile, *, include_views: bool = Fals
 
     Sections per table: Table Name, Purpose, Columns, Rows, Example Use
     """
+    return format_explain_tables(profile, include_views=include_views)
+
+
+def format_explain_tables(
+    profile: DatabaseProfile,
+    *,
+    include_views: bool = True,
+) -> str:
+    """
+    Enterprise catalog: Table · Purpose · Main columns · Usage.
+    """
     objects: list[TableProfile] = list(profile.tables)
     if include_views:
         objects.extend(profile.views)
     if not objects:
-        return "No tables were found in the cached schema profile."
+        return "No tables or views were found in the cached schema profile."
 
-    parts: list[str] = [f"**Tables in `{profile.database}`** ({len(profile.tables)} found)", ""]
+    parts: list[str] = [
+        f"**Data objects in `{profile.database}`** "
+        f"({profile.table_count} tables · {profile.view_count} views)",
+        "",
+    ]
     for tp in objects:
         pks = primary_keys_for(profile, tp.schema, tp.name)
-        pk_text = ", ".join(f"`{k}`" for k in pks) if pks else "Not detected"
-        col_preview = ", ".join(f"`{n}` ({t})" for n, t in tp.columns[:12])
-        if len(tp.columns) > 12:
-            col_preview += f", … (+{len(tp.columns) - 12} more)"
+        important = tp.important_columns or [c for c, _ in tp.columns[:8]]
+        main_cols = ", ".join(f"`{c}`" for c in important[:10])
+        if len(tp.columns) > len(important):
+            main_cols += f" (+{len(tp.columns) - min(10, len(important))} more)"
+        usage = ", ".join(
+            (tp.preferred_for or tp.use_cases or [infer_example_use(tp)])[:4]
+        )
+        role = tp.business_role or ("Analytical View" if tp.object_type == "VIEW" else "Table")
         rows_text = f"{tp.row_count:,}" if isinstance(tp.row_count, int) else "Unknown"
+        pk_text = ", ".join(f"`{k}`" for k in pks) if pks else "—"
+
         parts.extend(
             [
                 f"### `{tp.schema}.{tp.name}`",
-                f"- **Table Name:** `{tp.schema}.{tp.name}`",
-                f"- **Business Role:** {tp.business_role or 'Table'}",
+                f"- **Table:** `{tp.schema}.{tp.name}` ({role})",
                 f"- **Purpose:** {tp.purpose or infer_purpose(tp)}",
-                f"- **Columns:** {len(tp.columns)} — {col_preview or '_none_'}",
-                f"- **Primary Key:** {pk_text}",
+                f"- **Main columns:** {main_cols or '—'}",
+                f"- **Primary key:** {pk_text}",
                 f"- **Rows:** {rows_text}",
-                f"- **Key Metrics:** {', '.join(f'`{m}`' for m in (tp.key_metrics or [])[:8]) or '—'}",
-                f"- **Example Use:** {', '.join((tp.use_cases or [infer_example_use(tp)])[:3])}",
+                f"- **Usage:** {usage}",
                 "",
             ]
         )
