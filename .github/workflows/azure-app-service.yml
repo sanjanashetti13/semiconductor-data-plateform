@@ -216,6 +216,33 @@ jobs:
           name: azure-app-package
           path: _publish
 
+      - name: Show GitHub OIDC subject (for Azure FIC matching)
+        run: |
+          set -euo pipefail
+          echo "::group::OIDC token claims (sub/iss/aud only)"
+          export OIDC_TOKEN
+          OIDC_TOKEN="$(curl -sSL \
+            -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=api://AzureADTokenExchange")"
+          python - <<'PY'
+          import json, os, base64
+          token = os.environ["OIDC_TOKEN"]
+          payload = token.split(".")[1]
+          payload += "=" * (-len(payload) % 4)
+          claims = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
+          print("sub:", claims.get("sub"))
+          print("iss:", claims.get("iss"))
+          print("aud:", claims.get("aud"))
+          print("ref:", claims.get("ref"))
+          print("repository:", claims.get("repository"))
+          print()
+          print("Azure Portal → identity used by AZURE_CLIENT_ID → Federated credentials")
+          print("Subject must EQUAL the sub value above (exact string match).")
+          print("Issuer: https://token.actions.githubusercontent.com")
+          print("Audience: api://AzureADTokenExchange")
+          PY
+          echo "::endgroup::"
+
       - name: Login to Azure (OIDC)
         uses: azure/login@v2
         with:
