@@ -106,6 +106,9 @@ export interface SqlAgentResponse {
   category?: string | null;
   router_decision?: string | null;
   validation_result?: string | null;
+  agents_used?: string[];
+  planner_rationale?: string | null;
+  execution_graph?: string[];
 }
 
 export async function connectSqlDatabase(

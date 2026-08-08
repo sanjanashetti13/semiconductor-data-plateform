@@ -166,6 +166,9 @@ export function Workspace() {
             category: response.category,
             routerDecision: response.router_decision ?? response.category,
             validationResult: response.validation_result,
+            agentsUsed: response.agents_used,
+            plannerRationale: response.planner_rationale,
+            executionGraph: response.execution_graph,
           },
         ]);
       } catch (error) {

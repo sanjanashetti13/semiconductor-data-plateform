@@ -7,9 +7,9 @@ import logging
 from fastapi import APIRouter, HTTPException
 
 from ai.config import get_settings
+from ai.memory import clear_memory
 from ai.sql_agent import (
     SqlConnectionConfig,
-    ask_sql_agent,
     create_session,
     delete_session,
     get_session,
@@ -145,6 +145,7 @@ def session_status(session_id: str) -> dict:
 def disconnect_session(session_id: str) -> dict[str, str]:
     """Drop in-memory credentials, schema, and profile for a session."""
     delete_session(session_id)
+    clear_memory(session_id)
     return {"status": "disconnected"}
 
 
@@ -176,11 +177,29 @@ def sql_agent_chat(payload: SqlAgentChatRequest) -> SqlAgentChatResponse:
             }
             for m in (payload.history or [])
         ]
-        result = ask_sql_agent(
-            payload.session_id,
+        from ai.orchestrator import run_orchestrator
+
+        orch = run_orchestrator(
             question,
+            session_id=payload.session_id,
             history=history_payload,
         )
+        result = {
+            "answer": orch.answer,
+            "sql": orch.sql,
+            "tool": orch.tool,
+            "tool_label": orch.tool_label,
+            "data_source": orch.data_source,
+            "execution_time": orch.execution_time,
+            "row_count": orch.row_count,
+            "follow_ups": orch.follow_ups,
+            "category": orch.category,
+            "router_decision": orch.router_decision,
+            "validation_result": orch.validation_result,
+            "agents_used": orch.agents_used,
+            "planner_rationale": orch.planner_rationale,
+            "execution_graph": orch.execution_graph,
+        }
     except UnsafeSqlError as exc:
         logger.warning("Unsafe SQL rejected: %s", exc)
         raise HTTPException(
@@ -237,6 +256,9 @@ def sql_agent_chat(payload: SqlAgentChatRequest) -> SqlAgentChatResponse:
         category=result.get("category"),
         router_decision=result.get("router_decision") or result.get("category"),
         validation_result=_safe_dev_status(result.get("validation_result")),
+        agents_used=list(result.get("agents_used") or []),
+        planner_rationale=result.get("planner_rationale"),
+        execution_graph=list(result.get("execution_graph") or []),
     )
 
 
@@ -248,7 +270,7 @@ def _safe_dev_status(value: str | None) -> str | None:
     text = str(value).strip()
     if looks_like_raw_db_error(text):
         return "failed (see server logs)"
-    return text[:220] if len(text) > 220 else text
+    return text[:500] if len(text) > 500 else text
 
 
 def _should_replace_answer(answer: str) -> bool:

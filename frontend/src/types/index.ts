@@ -18,6 +18,9 @@ export interface ChatMessage {
   category?: string | null;
   routerDecision?: string | null;
   validationResult?: string | null;
+  agentsUsed?: string[];
+  plannerRationale?: string | null;
+  executionGraph?: string[];
   error?: boolean;
   suggestions?: string[];
 }

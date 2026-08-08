@@ -59,7 +59,10 @@ export function ChatMessage({
         typeof message.executionTime === "number" ||
         message.routerDecision ||
         message.category ||
-        message.validationResult,
+        message.validationResult ||
+        (message.agentsUsed && message.agentsUsed.length > 0) ||
+        message.plannerRationale ||
+        (message.executionGraph && message.executionGraph.length > 0),
     );
 
   async function handleCopy() {
@@ -133,6 +136,24 @@ export function ChatMessage({
                     message.routerDecision ?? message.category,
                   )}
                 />
+                {message.agentsUsed && message.agentsUsed.length > 0 && (
+                  <DetailRow
+                    label="Agents Used"
+                    value={message.agentsUsed.join(" → ")}
+                  />
+                )}
+                {message.plannerRationale && (
+                  <DetailRow
+                    label="Planner"
+                    value={message.plannerRationale}
+                  />
+                )}
+                {message.executionGraph && message.executionGraph.length > 0 && (
+                  <DetailRow
+                    label="Execution Graph"
+                    value={message.executionGraph.join(" → ")}
+                  />
+                )}
                 <DetailRow
                   label="Tool Used"
                   value={message.toolLabel ?? message.tool ?? "—"}

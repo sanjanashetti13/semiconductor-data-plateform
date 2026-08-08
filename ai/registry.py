@@ -11,9 +11,14 @@ AgentFn = Callable[[str, OrchestratorRequest, dict], AgentResult]
 _REGISTRY: dict[str, AgentFn] = {}
 
 
-def register(name: str, fn: AgentFn) -> AgentFn:
-    _REGISTRY[name] = fn
-    return fn
+def register(name: str):
+    """Decorator: ``@register(\"database\")`` registers an agent callable."""
+
+    def decorator(fn: AgentFn) -> AgentFn:
+        _REGISTRY[name] = fn
+        return fn
+
+    return decorator
 
 
 def get_agent(name: str) -> AgentFn:

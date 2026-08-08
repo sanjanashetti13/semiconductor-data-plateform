@@ -8,8 +8,8 @@ import time
 from fastapi import APIRouter, HTTPException
 
 from ai.config import get_settings
-from ai.copilot import ask_with_metadata
 from ai.database import execute_query
+from ai.orchestrator import run_orchestrator
 from ai.tools import TOOL_DATA_SOURCES, TOOL_DESCRIPTIONS, TOOL_REGISTRY
 from backend.schemas import (
     ChatRequest,
@@ -178,12 +178,14 @@ def chat(payload: ChatRequest) -> ChatResponse:
             },
         )
 
-    contextual = _build_contextual_question(question, payload.history)
+    history_payload = [
+        {"role": m.role, "content": m.content} for m in (payload.history or [])
+    ]
     settings = get_settings()
     started = time.perf_counter()
 
     try:
-        result = ask_with_metadata(contextual)
+        orch = run_orchestrator(question, history=history_payload)
     except ValueError as exc:
         raise HTTPException(
             status_code=400,
@@ -203,18 +205,22 @@ def chat(payload: ChatRequest) -> ChatResponse:
         ) from exc
 
     elapsed = round(time.perf_counter() - started, 2)
-    tool = result.get("tool")
-    answer = result["answer"]
-    data_source = result.get("data_source") or TOOL_DATA_SOURCES.get(tool or "", None)
+    # Prefer orchestrator timing; fall back to router wall clock
+    execution_time = orch.execution_time or elapsed
+    tool = orch.agents_used[0] if orch.agents_used else orch.tool
+    # Map first specialized agent / tool hint into familiar Mode-1 labels when possible
+    tool_key = tool if tool in TOOL_LABELS else "multi_agent"
+    answer = orch.answer
+    data_source = orch.data_source or TOOL_DATA_SOURCES.get(tool_key)
 
     return ChatResponse(
         answer=answer,
-        tool=tool,
-        tool_label=TOOL_LABELS.get(tool or "", tool),
+        tool=tool_key if tool_key in TOOL_LABELS else orch.tool,
+        tool_label=TOOL_LABELS.get(tool_key) or orch.tool_label,
         data_source=data_source,
-        response_mode=result.get("response_mode"),
-        execution_time=elapsed,
+        response_mode=None,
+        execution_time=execution_time,
         model=settings.groq_model,
-        confidence=_estimate_confidence(answer, tool),
-        follow_ups=FOLLOW_UPS.get(tool or "", DEFAULT_FOLLOW_UPS),
+        confidence=_estimate_confidence(answer, tool_key if tool_key in TOOL_REGISTRY else "knowledge"),
+        follow_ups=orch.follow_ups or DEFAULT_FOLLOW_UPS,
     )

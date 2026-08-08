@@ -45,6 +45,7 @@ _FOLLOW_UP_CUES = re.compile(
     r"same\s+(for|with)|"
     r"also\s+|"
     r"now\s+|"
+    r"why(\s+is\s+that)?|"
     r"those|these|that|it|them|"
     r"the\s+same|"
     r"failed\s*\??$|"

@@ -115,3 +115,6 @@ class SqlAgentChatResponse(BaseModel):
     category: str | None = None
     router_decision: str | None = None
     validation_result: str | None = None
+    agents_used: list[str] = Field(default_factory=list)
+    planner_rationale: str | None = None
+    execution_graph: list[str] = Field(default_factory=list)
