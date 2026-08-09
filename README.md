@@ -46,6 +46,12 @@ SECOM → Databricks ETL → Bronze → Silver → Gold → Delta Lake
                                                    React UI
 ```
 
+<p align="center">
+  <img src="docs/screenshots/databricks-catalog.png" alt="Databricks Catalog — Silver & Gold volumes" width="800" />
+  <br />
+  <em>Databricks Catalog Explorer — SECOM ingest with Silver / Gold medallion layers</em>
+</p>
+
 ---
 
 ## Features

@@ -8,5 +8,6 @@ Place demo screenshots here for the README gallery:
 | `database-connection.png` | Azure SQL connect form |
 | `power-bi.png` | Power BI configure dialog |
 | `architecture.png` | Architecture page |
+| `databricks-catalog.png` | Databricks Catalog — Silver / Gold volumes |
 
 Do not commit screenshots that contain real server names, usernames, or secrets.
