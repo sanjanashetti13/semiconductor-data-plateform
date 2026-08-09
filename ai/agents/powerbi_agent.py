@@ -74,6 +74,10 @@ def _validate_url(url: str) -> tuple[bool, str]:
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
             return False, "URL must be an http(s) link with a host."
         host = parsed.netloc.lower()
+        if "aaaaaaaa" in url.lower() or "00000000-0000" in url.lower():
+            return False, "That looks like a placeholder report URL — paste a real Power BI share/embed link."
+        if parsed.path in ("", "/") and "report" not in url.lower():
+            return False, "Paste a specific report link, not the Power BI home page."
         if "powerbi.com" in host or "app.powerbi.com" in host or "analysis.windows.net" in host:
             return True, "URL looks like a Microsoft Power BI / Fabric report link."
         return True, (

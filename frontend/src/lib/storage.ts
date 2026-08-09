@@ -60,11 +60,16 @@ export function clearAllChats(): void {
 }
 
 export function loadPowerBiUrl(): string {
-  return (
-    localStorage.getItem(POWER_BI_STORAGE_KEY) ??
-    import.meta.env.VITE_POWERBI_URL ??
-    ""
-  );
+  const fromStorage = localStorage.getItem(POWER_BI_STORAGE_KEY);
+  if (fromStorage && fromStorage.trim()) {
+    return fromStorage.trim();
+  }
+  // Optional build-time default — ignore bare Power BI homepage
+  const fromEnv = (import.meta.env.VITE_POWERBI_URL ?? "").trim();
+  if (!fromEnv || fromEnv === "https://app.powerbi.com" || fromEnv === "https://app.powerbi.com/") {
+    return "";
+  }
+  return fromEnv;
 }
 
 export function savePowerBiUrl(url: string): void {

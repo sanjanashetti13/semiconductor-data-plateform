@@ -1,263 +1,385 @@
-# Azure Data Copilot / Semiconductor Intelligence Hub
+# Semiconductor Intelligence Hub
 
-Enterprise AI analytics platform for semiconductor manufacturing intelligence **and** a generic Azure SQL Copilot for any database.
+**Azure Data Copilot** — an enterprise AI analytics platform that turns natural-language questions into trusted insights over Azure SQL, backed by a Databricks medallion pipeline, Power BI dashboards, and a multi-agent Copilot.
 
-Suitable for demos, technical interviews, and deployment on Azure App Service, Render, Railway, or a Vite frontend + Python API.
+[![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
+[![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://react.dev/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg)](https://fastapi.tiangolo.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
----
-
-## Project Overview
-
-Users connect an Azure SQL database, ask natural-language questions, and receive business-ready answers. The platform:
-
-1. Profiles schema semantics (tables, views, keys, roles)
-2. Classifies intent (KPI · Schema · Business reasoning · Analytical · Knowledge)
-3. Executes **read-only** SQL only when needed
-4. Reasons over the full schema for “what is this database used for?” style questions
-
-**Semiconductor Mode** activates automatically when curated objects are present (`fact_sensor_readings`, `dim_time`, `vw_manufacturing_summary`).
-
-**Generic SQL Mode** activates for any other Azure SQL database.
+| | |
+|---|---|
+| **Demo** | [https://semiconductor-ai-sanjana.azurewebsites.net](https://semiconductor-ai-sanjana.azurewebsites.net) |
+| **Repository** | [github.com/sanjanashetti13/semiconductor-data-plateform](https://github.com/sanjanashetti13/semiconductor-data-plateform) |
 
 ---
 
 ## Architecture
 
-```
-React (Vite)  →  FastAPI  →  Groq LLM
-                    ↓
-              Azure SQL (session credentials or .env for Mode 1)
-                    ↓
-              Power BI (external URL, browser-local)
-```
+### End-to-end data & AI pipeline
 
-| Layer | Responsibility |
-|--------|----------------|
-| Frontend | Copilot chat, Database Connection, Power BI link, Architecture |
-| Backend | Intent routing, schema profiling, KPI aggregation, safe SQL |
-| Azure SQL | Warehouse / any customer database |
-| Groq | Natural-language generation & SQL drafting |
-| Power BI | External executive dashboards (not recreated in-app) |
-
----
-
-## Technology Stack
-
-- **Frontend:** React, TypeScript, Vite, Tailwind
-- **Backend:** FastAPI, Python 3.11+
-- **Data:** Azure SQL Database (ODBC Driver 18)
-- **AI:** Groq (`llama-3.3-70b-versatile` by default)
-- **BI:** Power BI (configured URL opens externally)
-- **Optional ETL:** Azure Databricks medallion (Bronze → Silver → Gold)
-
----
-
-## How to Run
-
-### Prerequisites
-
-- Python 3.11+
-- Node.js 20+
-- ODBC Driver 18 for SQL Server
-- Groq API key
-- Azure SQL database (for Copilot)
-
-### Backend
-
-```bash
-python -m venv .venv
-# Windows
-.\.venv\Scripts\activate
-# macOS / Linux
-source .venv/bin/activate
-
-pip install -r requirements.txt
-# Optional local ETL stack: pip install -r requirements-etl.txt
-cp .env.example .env
-# Edit .env — at minimum set GROQ_API_KEY
-
-uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+```text
+SECOM Dataset
+      │
+      ▼
+Azure Databricks ETL (PySpark)
+      │
+      ├── Bronze  (raw ingest)
+      ├── Silver  (cleaned / typed)
+      └── Gold    (analytics-ready)
+      │
+      ▼
+Delta Lake (curated lakehouse tables)
+      │
+      ▼
+Azure SQL Database
+  • fact_sensor_readings
+  • dim_time
+  • vw_manufacturing_summary
+      │
+      ├──► Power BI  (executive dashboards — external URL)
+      │
+      └──► FastAPI AI Copilot
+                │
+                ├── Planner Agent
+                ├── Database / Schema Agents  (safe SELECT only)
+                ├── Knowledge / Analytics / Recommendation Agents
+                ├── Power BI Agent
+                └── ML Agent (Random Forest failure model)
+                │
+                ▼
+         React Workspace UI
 ```
 
-### Frontend
+### Application runtime (one Azure App Service URL)
 
-```bash
-cd frontend
-cp .env.example .env
-npm install
-npm run dev
+```text
+Browser  →  https://<app>.azurewebsites.net
+               ├── /api/*     FastAPI (Groq LLM, Azure SQL via ODBC)
+               └── /*         React production build (frontend/dist)
 ```
 
-Open http://127.0.0.1:5173/copilot
-
-1. Go to **Database Connection**
-2. Enter Azure SQL Server, Database, Username, Password
-3. Connect, then ask questions in **AI Copilot**
-
----
-
-## Environment Variables
-
-Copy `.env.example` → `.env`. **Never commit `.env`.**
-
-| Variable | Required | Purpose |
-|----------|----------|---------|
-| `GROQ_API_KEY` | Yes | LLM access (backend only) |
-| `GROQ_MODEL` | No | Default `llama-3.3-70b-versatile` |
-| `SQL_SERVER` / `AZURE_SQL_SERVER` | Mode 1 | Curated warehouse host |
-| `SQL_DATABASE` / `AZURE_SQL_DATABASE` | Mode 1 | Database name |
-| `SQL_USERNAME` / `AZURE_SQL_USERNAME` | Mode 1 | SQL login |
-| `SQL_PASSWORD` / `AZURE_SQL_PASSWORD` | Mode 1 | SQL password |
-| `CORS_ORIGINS` | No | Dev localhost list; leave empty for same-origin production |
-| `POWERBI_URL` | No | Ops hint only — users configure URL in the UI |
-| `VITE_API_BASE_URL` | No | Leave empty for same-origin `/api` |
-| `VITE_POWERBI_URL` | No | Optional public default Power BI URL (no secrets) |
-
-**Security rules**
-
-- Never put `GROQ_API_KEY` or SQL credentials in `VITE_*` variables
-- Generic Mode passwords are **never** written to disk; server memory for the active session only
-- Browser may remember Server / Database / Username (not password)
-- Production API responses never include stack traces or raw ODBC/SQL Server errors
-
----
-
-## Deployment Guide
-
-### Azure App Service (recommended — one URL, no Docker)
-
-```
-Browser → https://<app-name>.azurewebsites.net
-              ├── /api/*   → FastAPI (Groq, Azure SQL via pyodbc)
-              └── /*       → React (frontend/dist)
-```
-
-**Local production smoke test**
-
-```bash
-cd frontend && npm ci && npm run build && cd ..
-# Windows PowerShell
-$env:APP_ENV="production"
-python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
-```
-
-- UI: `http://127.0.0.1:8000/`
-- Health: `http://127.0.0.1:8000/api/health` → `{"status":"healthy"}`
-
-**App Service**
-
-| Setting | Value |
-|---------|--------|
-| OS | Linux |
-| Stack | Python 3.11+ |
-| Startup Command | `bash startup.sh` or `python -m uvicorn backend.main:app --host 0.0.0.0 --port $PORT` |
-
-Build the frontend during deploy (`cd frontend && npm ci && npm run build`) so `frontend/dist/index.html` exists on the worker.
-
-**Required App Settings:** `GROQ_API_KEY`, `APP_ENV=production`, and for Semiconductor Mode `SQL_SERVER`, `SQL_DATABASE`, `SQL_USERNAME`, `SQL_PASSWORD`.
-
-**ODBC Driver 18:** logged at startup. Optional operator endpoint `/api/diagnostics/odbc` when `ENABLE_DIAGNOSTICS=true` (disable afterward).
-
-### Local development (two processes)
-
-Vite on `:5173` proxies `/api` → FastAPI on `:8000`. See **How to Run** above.
-
-### Optional: Vercel / Docker
-
-See `docs/Deployment.md`. Vercel Python runtimes do not include ODBC Driver 18.
-
----
-
-## Azure SQL Configuration
-
-1. Create an Azure SQL Database and firewall rule for your client / App Service outbound IPs
-2. Create a least-privilege read login for demos when possible
-3. For Generic Mode: enter credentials on **Database Connection**
-4. For Semiconductor Mode: load gold data (optional script uses env vars only):
-
-```bash
-# Requires AZURE_SQL_* in .env and data/gold_sensor_data.csv
-python scripts/load_gold_to_sql.py
-```
-
-On connect, the API profiles tables/views/columns/keys once and caches the schema until Disconnect.
-
----
-
-## Power BI Configuration
-
-1. Open **Power BI** in the app
-2. Click **Configure Dashboard**
-3. Paste a Report URL or Embed URL
-4. Stored in **this browser only** (localStorage) — never committed to git
-
----
-
-## AI Workflow
-
-```
-Question
-  → Intent classification (KPI | Schema | Business | Analytical | Knowledge | Reasoning)
-  → Semantic routing (Semiconductor locks vs generic profile)
-  → SQL only when factual data is required (SELECT validated)
-  → Business narrative for reasoning / whole-database questions
-  → Dynamic follow-up suggestions
-```
-
-Developer Mode (Settings gear, **OFF by default**) reveals SQL, routing, model, and timing.
-
----
-
-## Folder Structure
-
-```
-backend/           FastAPI app + routers
-ai/                Copilot, SQL agent, tools, LLM
-ai/sql_agent/      Planner, profiler, KPI, semantics, validator
-frontend/          React workspace
-scripts/           Ops scripts (env-based; no hardcoded secrets)
-docs/              Extra architecture / API notes
-tests/             Pytest suites
-data/              Sample / gold data (large files gitignored where configured)
-.env.example       Template — copy to .env
+```mermaid
+flowchart LR
+  A[SECOM Dataset] --> B[Databricks ETL]
+  B --> C[Bronze]
+  C --> D[Silver]
+  D --> E[Gold / Delta Lake]
+  E --> F[Azure SQL]
+  F --> G[Power BI]
+  F --> H[FastAPI AI Agents]
+  H --> I[React Copilot UI]
+  J[Groq LLM] --> H
 ```
 
 ---
 
 ## Screenshots
 
-Add screenshots under `docs/screenshots/` (optional):
+Add PNGs under [`docs/screenshots/`](docs/screenshots/) (never include passwords or live secrets). Once present, they render below:
 
-- `copilot.png` — AI Copilot chat
-- `database-connection.png` — Azure SQL connect form
-- `power-bi.png` — Power BI configure dialog
-- `architecture.png` — Platform architecture page
+| File | Description |
+|------|-------------|
+| `docs/screenshots/copilot.png` | AI Copilot chat |
+| `docs/screenshots/database-connection.png` | Azure SQL connection |
+| `docs/screenshots/power-bi.png` | Power BI dashboard page |
+| `docs/screenshots/architecture.png` | Architecture overview |
+
+```markdown
+![AI Copilot](docs/screenshots/copilot.png)
+![Database Connection](docs/screenshots/database-connection.png)
+![Power BI](docs/screenshots/power-bi.png)
+![Architecture](docs/screenshots/architecture.png)
+```
+
+See [`docs/screenshots/README.md`](docs/screenshots/README.md) for naming guidance.
 
 ---
 
-## Security Checklist
+## Features
 
-- [x] No hardcoded Azure SQL passwords or Groq keys in source
-- [x] `.env` gitignored
-- [x] SELECT-only SQL validation (DROP/DELETE/UPDATE/INSERT/ALTER/CREATE/TRUNCATE/EXEC/MERGE rejected)
-- [x] Friendly user errors; detailed failures logged server-side
-- [x] Session credentials cleared on Disconnect
-- [x] Developer Mode hidden / off by default
+- **AI Copilot** — natural-language Q&A over the connected Azure SQL database  
+- **Multi-agent orchestration** — Planner → Database / Schema / Knowledge / Analytics / Recommendation / Power BI / ML  
+- **Semiconductor Mode** — auto-enabled when curated objects (`fact_sensor_readings`, `dim_time`, `vw_manufacturing_summary`) are present  
+- **Generic SQL Mode** — connect any Azure SQL database from the UI  
+- **Safe SQL** — SELECT-only validation; no DDL/DML  
+- **See SQL Query** — contextual expand/copy for successfully executed SQL (hidden by default)  
+- **Visualizations** — optional bar/line charts from real query results  
+- **Schema intelligence** — INFORMATION_SCHEMA profiling, fact/dim/view roles, relationships  
+- **Power BI integration** — open/embed a published report URL (browser-local; not recreated in-app)  
+- **ML agent** — Random Forest wafer-failure model integration when asked  
+- **Developer Mode** — optional planner/agent/SQL/timing details (off by default)  
+- **One-host production deploy** — FastAPI serves `frontend/dist` on Azure App Service  
+
+---
+
+## Tech stack
+
+| Layer | Technologies |
+|--------|----------------|
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS, React Router |
+| Backend | FastAPI, Uvicorn, Pydantic, Python 3.11 |
+| AI / LLM | Groq (`llama-3.3-70b-versatile`), custom multi-agent layer |
+| Data warehouse | Azure SQL Database, ODBC Driver 18, `pyodbc` |
+| Lakehouse / ETL | Azure Databricks, PySpark, medallion Bronze → Silver → Gold, Delta Lake |
+| BI | Microsoft Power BI (external report / embed URL) |
+| ML | scikit-learn Random Forest (optional artifact under `ml_outputs/`) |
+| CI/CD | GitHub Actions + Azure App Service (OIDC federated credentials) |
+| Hosting | Azure App Service (Linux, Python 3.11) |
+
+---
+
+## Dataset / source attribution
+
+This project uses the **SECOM** (Semiconductor Manufacturing) dataset from the [UCI Machine Learning Repository](https://archive.ics.uci.edu/dataset/179/secom):
+
+- High-dimensional process sensor readings from a semiconductor manufacturing line  
+- Pass/fail labels used for yield and quality analytics  
+- Curated gold data is loaded into Azure SQL (e.g. `fact_sensor_readings`) for Copilot and Power BI  
+
+Please cite UCI SECOM when publishing results that rely on this data.
+
+---
+
+## Setup instructions
+
+### Prerequisites
+
+- Python **3.11+**
+- Node.js **20+**
+- [ODBC Driver 18 for SQL Server](https://learn.microsoft.com/sql/connect/odbc/download-odbc-driver-for-sql-server)
+- Groq API key
+- Azure SQL database (for live Copilot queries)
+
+### 1. Clone
+
+```bash
+git clone https://github.com/sanjanashetti13/semiconductor-data-plateform.git
+cd semiconductor-data-plateform
+```
+
+### 2. Backend
+
+```bash
+python -m venv .venv
+
+# Windows
+.\.venv\Scripts\activate
+
+# macOS / Linux
+source .venv/bin/activate
+
+pip install -r requirements.txt
+cp .env.example .env
+# Edit .env — set at least GROQ_API_KEY (and SQL_* for Semiconductor Mode)
+
+python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Optional local ETL dependencies: `pip install -r requirements-etl.txt`
+
+### 3. Frontend (dev)
+
+```bash
+cd frontend
+cp .env.example .env
+npm ci
+npm run dev
+```
+
+Open [http://127.0.0.1:5173/copilot](http://127.0.0.1:5173/copilot)
+
+1. **Database Connection** → enter Azure SQL Server, Database, Username, Password → Connect  
+2. **AI Copilot** → ask manufacturing or schema questions  
+3. **Power BI** → configure a published report URL (stored in this browser only)  
+
+### 4. One-process production smoke test (local)
+
+```bash
+cd frontend && npm ci && npm run build && cd ..
+
+# Windows PowerShell
+$env:APP_ENV="production"
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+```
+
+- UI: `http://127.0.0.1:8000/`  
+- Health: `http://127.0.0.1:8000/api/health`  
+
+---
+
+## Environment variables
+
+Copy [`.env.example`](.env.example) → `.env`. **Never commit `.env`.**
+
+### Backend (App Service Application Settings in production)
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `APP_ENV` | Production | Use `production` on Azure |
+| `GROQ_API_KEY` | **Yes** | Groq LLM (backend only) |
+| `GROQ_MODEL` | No | Default `llama-3.3-70b-versatile` |
+| `SQL_SERVER` | Semiconductor Mode | Azure SQL host |
+| `SQL_DATABASE` | Semiconductor Mode | Database name |
+| `SQL_USERNAME` | Semiconductor Mode | SQL login |
+| `SQL_PASSWORD` | Semiconductor Mode | SQL password |
+| `SQL_DRIVER` | No | Default `ODBC Driver 18 for SQL Server` |
+| `CORS_ORIGINS` | No | Dev localhost list; **leave empty** for same-origin App Service |
+| `ENABLE_DIAGNOSTICS` | No | `true` enables `/api/diagnostics/odbc` (keep off in public prod) |
+| `ENABLE_API_DOCS` | No | Keep `/docs` in production when `true` |
+| `POWERBI_URL` | No | Ops hint only — users configure URL in the UI |
+
+Aliases `AZURE_SQL_*` are accepted with the same meaning as `SQL_*`.
+
+### Frontend build-time (optional)
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `VITE_API_BASE_URL` | No | Leave **empty** so the browser calls same-origin `/api/...` |
+| `VITE_POWERBI_URL` | No | Optional public default report URL (**no secrets**) |
+
+### Security rules for env
+
+- Never set `VITE_GROQ_API_KEY`, `VITE_SQL_PASSWORD`, or any secret in `VITE_*`  
+- Generic Mode passwords stay in **server memory** for the session only (not written to disk)  
+- Production responses must not include stack traces, connection strings, or raw ODBC errors  
+
+---
+
+## Deployment information
+
+### Recommended: Azure App Service (Linux, Python 3.11)
+
+| Setting | Value |
+|---------|--------|
+| App name (example) | `semiconductor-ai-sanjana` |
+| OS | Linux |
+| Runtime | Python 3.11 |
+| Startup command | `bash startup.sh` |
+| Equivalent | `python -m uvicorn backend.main:app --host 0.0.0.0 --port $PORT` |
+
+**Application settings (portal):**
+
+```text
+APP_ENV=production
+GROQ_API_KEY=<secret>
+SQL_SERVER=<secret>
+SQL_DATABASE=<secret>
+SQL_USERNAME=<secret>
+SQL_PASSWORD=<secret>
+```
+
+FastAPI serves the React build from `frontend/dist` with SPA fallback for `/copilot`, `/data-sources`, `/power-bi`, `/architecture`.
+
+**ODBC:** Azure SQL needs **ODBC Driver 18** on the App Service host. If the driver is missing, the API still starts; SQL routes return a safe **503**.
+
+### Demo
+
+- Live app: [https://semiconductor-ai-sanjana.azurewebsites.net](https://semiconductor-ai-sanjana.azurewebsites.net)  
+- Health check: `/api/health`  
+
+> Update the demo URL if your App Service name differs.
+
+---
+
+## CI/CD explanation
+
+GitHub Actions workflow: [`.github/workflows/azure-app-service.yml`](.github/workflows/azure-app-service.yml)
+
+```text
+push to main  /  workflow_dispatch
+        │
+        ▼
+   BUILD job
+   • Checkout
+   • Python 3.11 + Node 20
+   • frontend: npm ci && npm run build
+   • Verify frontend/dist/index.html
+   • Package: backend/, ai/, frontend/dist/, requirements.txt, startup.sh, runtime.txt
+   • Upload artifact
+        │
+        ▼
+   DEPLOY job
+   • azure/login@v2  (OIDC — no passwords in the workflow)
+   • azure/webapps-deploy@v3 → App Service (slot: Production)
+```
+
+**GitHub secrets (OIDC):**
+
+- `AZURE_CLIENT_ID`  
+- `AZURE_TENANT_ID`  
+- `AZURE_SUBSCRIPTION_ID`  
+
+**Important:** The Azure Entra **federated credential Subject** must match GitHub’s OIDC `sub` exactly (often the immutable form):
+
+```text
+repo:sanjanashetti13@192409648/semiconductor-data-plateform@1311673727:ref:refs/heads/main
+```
+
+Issuer: `https://token.actions.githubusercontent.com`  
+Audience: `api://AzureADTokenExchange`
+
+Python packages are installed on App Service via Oryx (`requirements.txt`); the workflow does not ship a huge `antenv` from CI.
+
+---
+
+## Security notes
+
+- No hardcoded Groq keys or SQL passwords in source  
+- `.env` / `.env.*` gitignored (`!.env.example` kept)  
+- SELECT-only SQL validation (rejects DROP/DELETE/UPDATE/INSERT/ALTER/CREATE/TRUNCATE/EXEC/MERGE)  
+- Friendly user-facing errors; details logged server-side only  
+- Session credentials cleared on Disconnect  
+- Developer Mode off by default  
+- Power BI URLs stored in **browser localStorage** only  
+- Same-origin production API calls (`/api/...`) — no secrets in the JS bundle  
 
 If a password was ever committed historically, **rotate it in Azure** immediately.
 
 ---
 
-## Future Enhancements
+## Folder structure
 
-- Persistent multi-user auth (Entra ID)
-- Row-level security / governed semantic models
-- Streaming token responses
-- Automated CI security scanning
-- Managed Power BI embed tokens (service principal)
+```text
+backend/              FastAPI app + routers
+ai/                   Multi-agent Copilot, SQL agent, tools, LLM
+ai/agents/            Planner + specialized agents
+ai/sql_agent/         Planner, profiler, KPI, semantics, validator
+frontend/             React workspace (Vite)
+scripts/              Ops / load / OIDC helper scripts
+docs/                 Extra docs + screenshots
+tests/                Pytest suites
+data/                 Sample / gold data (large files gitignored)
+.env.example          Env template
+startup.sh            Azure App Service startup
+.github/workflows/    Azure App Service CI/CD
+```
+
+---
+
+## Demo link
+
+**Live demo:** [https://semiconductor-ai-sanjana.azurewebsites.net](https://semiconductor-ai-sanjana.azurewebsites.net)
+
+Useful paths after deploy:
+
+| Path | Purpose |
+|------|---------|
+| `/` | App (redirects to Copilot) |
+| `/copilot` | AI Copilot |
+| `/data-sources` | Azure SQL connection |
+| `/power-bi` | Power BI dashboard |
+| `/architecture` | Architecture page |
+| `/api/health` | Health probe |
+
+---
+
+## GitHub repository
+
+**https://github.com/sanjanashetti13/semiconductor-data-plateform**
 
 ---
 
 ## License
 
-MIT
+This project is licensed under the **MIT License** — see [`LICENSE`](LICENSE).

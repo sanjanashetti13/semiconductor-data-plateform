@@ -17,7 +17,7 @@ services:
       args:
         VITE_API_BASE_URL: ""
         VITE_POWERBI_EMBED_URL: ${VITE_POWERBI_EMBED_URL:-}
-        VITE_POWERBI_URL: ${VITE_POWERBI_URL:-https://app.powerbi.com/}
+        VITE_POWERBI_URL: ${VITE_POWERBI_URL:-}
     container_name: sih-frontend
     ports:
       - "8080:80"
